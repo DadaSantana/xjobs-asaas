@@ -328,6 +328,9 @@ const DetalheProjeto = () => {
   const pendingProposals = proposals.filter(p => p.status === 'pendente');
   const rejectedProposals = proposals.filter(p => p.status === 'rejeitada');
   const canAcceptProposals = project.status !== 'executando' && !project.selectedFreelancerId;
+  
+  console.log('[DetalheProjeto] Render - acceptedProposal:', acceptedProposal ? 'exists' : 'null');
+  console.log('[DetalheProjeto] Render - project.selectedFreelancerId:', project.selectedFreelancerId);
 
   return (
     <div className="space-y-6">
@@ -624,7 +627,18 @@ const DetalheProjeto = () => {
                       <div className="text-right">
                         <div className="text-sm text-gray-600">Valor</div>
                         <div className="text-lg font-bold text-green-600">
-                          {acceptedProposal && formatCurrency((acceptedProposal.proposedBudget * delivery.percentage) / 100)}
+                          {(() => {
+                            let projectValue = 0;
+                            if (acceptedProposal) {
+                              projectValue = acceptedProposal.proposedBudget;
+                            } else if (project.selectedFreelancerId && project.likes) {
+                              const selectedLike = project.likes.find(l => l.freelancerId === project.selectedFreelancerId);
+                              if (selectedLike) {
+                                projectValue = selectedLike.proposedValue;
+                              }
+                            }
+                            return formatCurrency((projectValue * delivery.percentage) / 100);
+                          })()}
                         </div>
                       </div>
                     </div>
@@ -648,14 +662,52 @@ const DetalheProjeto = () => {
                         className="flex-1 bg-green-600 hover:bg-green-700"
                         disabled={acceptingDeliveryId === delivery.id}
                         onClick={async () => {
-                          if (!project || !userProfile || !acceptedProposal) {
-                            console.log('[AcceptDelivery] Dados faltando:', { 
-                              hasProject: !!project, 
-                              hasUserProfile: !!userProfile, 
-                              hasProposal: !!acceptedProposal 
+                          console.log('[AcceptDelivery] onClick disparado para delivery:', delivery.id);
+                          console.log('[AcceptDelivery] Estado atual:', { 
+                            hasProject: !!project, 
+                            hasUserProfile: !!userProfile, 
+                            hasAcceptedProposal: !!acceptedProposal,
+                            selectedFreelancerId: project?.selectedFreelancerId,
+                            proposalsCount: proposals.length
+                          });
+                          
+                          if (!project || !userProfile) {
+                            console.log('[AcceptDelivery] Dados básicos faltando');
+                            toast({
+                              title: 'Erro',
+                              description: 'Dados do projeto ou usuário não encontrados',
+                              variant: 'destructive',
                             });
                             return;
                           }
+                          
+                          // Buscar proposta aceita ou freelancer selecionado
+                          let freelancerId = project.selectedFreelancerId;
+                          let freelancerName = 'Freelancer';
+                          
+                          if (acceptedProposal) {
+                            freelancerId = acceptedProposal.freelancerId;
+                            freelancerName = acceptedProposal.freelancerName;
+                          } else if (project.selectedFreelancerId && project.likes) {
+                            // Buscar nos likes
+                            const selectedLike = project.likes.find(l => l.freelancerId === project.selectedFreelancerId);
+                            if (selectedLike) {
+                              freelancerId = selectedLike.freelancerId;
+                              freelancerName = selectedLike.freelancerName;
+                            }
+                          }
+                          
+                          if (!freelancerId) {
+                            console.log('[AcceptDelivery] Freelancer não encontrado');
+                            toast({
+                              title: 'Erro',
+                              description: 'Freelancer não encontrado no projeto',
+                              variant: 'destructive',
+                            });
+                            return;
+                          }
+                          
+                          console.log('[AcceptDelivery] Freelancer identificado:', { freelancerId, freelancerName });
                           
                           console.log('[AcceptDelivery] Iniciando aceite da entrega:', delivery.id);
                           setAcceptingDeliveryId(delivery.id);
@@ -688,8 +740,8 @@ const DetalheProjeto = () => {
                                 },
                                 project.clientId,
                                 userProfile.name || 'Cliente',
-                                payment.freelancerId,
-                                acceptedProposal.freelancerName,
+                                freelancerId,
+                                freelancerName,
                                 project.title,
                                 fundStatus.projectValue
                               );
@@ -767,7 +819,18 @@ const DetalheProjeto = () => {
                       </div>
                     </div>
                     <div className="font-semibold text-green-600">
-                      {acceptedProposal && formatCurrency((acceptedProposal.proposedBudget * delivery.percentage) / 100)}
+                      {(() => {
+                        let projectValue = 0;
+                        if (acceptedProposal) {
+                          projectValue = acceptedProposal.proposedBudget;
+                        } else if (project.selectedFreelancerId && project.likes) {
+                          const selectedLike = project.likes.find(l => l.freelancerId === project.selectedFreelancerId);
+                          if (selectedLike) {
+                            projectValue = selectedLike.proposedValue;
+                          }
+                        }
+                        return formatCurrency((projectValue * delivery.percentage) / 100);
+                      })()}
                     </div>
                   </div>
                 ))}
