@@ -1,0 +1,69 @@
+Relatório de Funcionalidades Desenvolvidas — XJOBS
+
+Data: 01/09/2025
+
+Objetivo
+Este documento descreve, de forma organizada, as funcionalidades entregues no projeto XJOBS, separadas por tipo de acesso (Cliente, Freelancer e Administrativo), além de recursos transversais da plataforma.
+
+1) Acesso do Cliente
+- Autenticação: cadastro e login por e-mail/senha, recuperação de senha e suporte a login social conforme configuração do projeto; seleção de perfil quando aplicável.
+- Perfil do cliente: edição de dados pessoais e empresariais (nome, e-mail, telefone, CNPJ, endereço para faturamento/checkout PIX), imagem de perfil e links (ex.: LinkedIn).
+- Publicação de projetos: criação de projetos com título, descrição rica, categoria/subcategoria, orçamento e anexos; validações de campo e feedbacks ao usuário.
+- Descoberta de freelancers: listagem de freelancers com informações de perfil (foto, bio, habilidades, localização, taxa/hora, avaliações); filtros e ordenação conforme dados disponíveis.
+- Favoritos: marcação/gerenciamento de freelancers favoritos para acesso rápido e priorização na contratação.
+- Mensagens/Chat: conversa em tempo real com freelancers, envio de anexos, indicador de presença/online e histórico de mensagens por projeto.
+- Gestão de propostas: recebimento, visualização e análise de propostas; aceite/recusa de propostas com atualização de status do projeto e notificações automáticas.
+- Acompanhamento de projetos: visão de “Meus Projetos” com status (ex.: criado, em negociação, em andamento, concluído), detalhes, prazos e ações contextuais.
+- Pagamentos (escrow): fluxo de pagamento com criação de cobrança/hold, estados (pendente, aprovado, recusado, falha), confirmação e notificação; suporte a PIX e liberação de fundos ao concluir etapas.
+- Liberação de fundos: aprovação de solicitações de liberação de valores conforme marcos/entregas, com registro no histórico financeiro do projeto.
+- Disputas: abertura de disputa com descrição e evidências (anexos), acompanhamento do status e comunicação até a resolução pela equipe.
+- Avaliações: avaliação do freelancer ao término do projeto (nota e comentário), impactando rating e reputação do profissional.
+- Suporte: área para contato com a equipe/gestão, registro de solicitações e acompanhamento de respostas.
+- Notificações: alertas em tempo real (ex.: novas propostas, mensagens, pagamentos, disputas, prazos) e central de notificações com ações rápidas.
+
+2) Acesso do Freelancer
+- Autenticação: cadastro/login, recuperação de senha e seleção de perfil (freelancer); onboarding com coleta de dados essenciais.
+- Perfil profissional: edição de bio, habilidades, categoria/subcategoria, disponibilidade, experiência, taxa/hora, localização e links; upload de foto.
+- Portfólio e certificações: cadastro/edição de itens de portfólio (título, descrição, imagens, tecnologias, links) e certificações (nome, emissor, data, URL), com organização visual e remoção quando necessário.
+- Encontre Trabalho: listagem de projetos publicados, com filtros por categoria e subcategoria, busca e ordenação; visualização de detalhes do projeto e requisitos.
+- Propostas: envio de propostas com mensagem e valores; gestão de propostas enviadas (status: enviada, aceita, recusada) e notificação de mudanças.
+- Curtidas/Interesse: possibilidade de “curtir”/demonstrar interesse em projetos, com contagem limitada conforme plano ativo (likesRemaining) e controle de uso.
+- Meus Projetos: acompanhamento de projetos nas diferentes etapas, prazos e entregas; ações contextuais conforme status.
+- Mensagens/Chat: comunicação direta com o cliente por projeto, envio de anexos, presença online e histórico.
+- Solicitação de liberação de fundos: requisição de liberação parcial/total conforme entregas, com registro e notificação ao cliente.
+- Finanças: visão de ganhos, transações, solicitações de liberação, retenções (hold) e histórico; integração com recebedor para saque/repasse.
+- Cadastro de recebedor (Pagar.me): coleta/validação de dados de conta/empresa para recebimento; status de verificação e atualizações.
+- Planos do freelancer: assinatura/gestão de planos (ex.: limites de curtidas, benefícios), renovação/cancelamento e validade (planExpiresAt), com integração de cobrança.
+- Avaliações recebidas: exibição da média, quantidade de avaliações e comentários de clientes ao final dos projetos.
+- Suporte: canal para suporte com a equipe e acompanhamento de respostas.
+- Notificações: eventos em tempo real (novas mensagens, propostas aceitas/recusadas, pagamentos, prazos e disputas) e central de notificações.
+
+3) Acesso Administrativo (Gestão/Manager)
+- Login do gestor: autenticação dedicada para acesso ao painel administrativo.
+- Dashboard gerencial: visão geral de métricas (usuários, projetos, pagamentos, disputas, planos), atividades recentes e alertas do sistema.
+- Gestão de usuários: listagem e busca de usuários por perfil/atributos; visualização detalhada do perfil; atualização de campos administrativos e ações de moderação/validação de perfil.
+- Equipe/Time: gestão de membros da equipe (gestores/moderadores), criação de novos membros e organização de responsabilidades.
+- Moderação: fila e painel de moderação (mensagens, projetos, evidências), atribuição de análises, resolução/rejeição e estatísticas por moderador.
+- Disputas: acompanhamento e resolução de disputas, registro de decisões e comunicação com as partes envolvidas.
+- Chats (visão administrativa): monitoramento de conversas quando necessário para mediação/segurança e registro de ocorrências.
+- Freelancers em destaque: curadoria de profissionais exibidos na home/landing; inclusão/remoção com dados de perfil e critérios de destaque.
+- Planos e assinaturas: acompanhamento de assinaturas e faturamento, ajuste de benefícios/limites e suporte a mudanças de plano.
+- Logs e alertas do sistema: visualização de logs classificados (pagamentos, projetos, usuários, disputas, planos, sistema), níveis (info, warning, error, critical), leitura e auditoria.
+- Suporte/admin: acompanhamento de tickets/solicitações e atuação direta sobre casos críticos.
+
+4) Recursos Transversais da Plataforma
+- Autenticação e autorização: sessões seguras, papéis (cliente, freelancer, gestor, moderador) e proteção de rotas.
+- Presença em tempo real: indicador online/offline/away e última atividade em chats e áreas colaborativas.
+- Notificações em tempo real: geração via funções/serviços com disparos por eventos (propostas, mensagens, pagamentos, disputas, moderação, planos, sistema).
+- Integração de pagamentos: fluxo de escrow (hold e release), PIX, criação/validação de recebedores, acompanhamento de status e webhooks.
+- E-mails transacionais: envio de e-mails para eventos críticos (cadastro, propostas, pagamentos, disputas, planos e comunicações administrativas).
+- Upload de arquivos: anexos em conversas e projetos com armazenamento seguro e obtenção de URLs de download.
+- Regras de segurança e moderação: políticas de acesso a dados, moderação de conteúdo e trilhas de auditoria por log.
+- UX responsiva: componentes reutilizáveis, responsividade e feedbacks claros (toasts, estados de carregamento, vazios e erros).
+
+Observações Finais
+- O projeto está estruturado para escalar funcionalidades, com serviços desacoplados (usuários, projetos, chat, pagamentos, moderação, planos, notificações, finanças) e tipagens consistentes.
+- A integração com o provedor de pagamentos contempla fluxo de retenção/liberação, cadastro de recebedor e assinaturas, com estados bem definidos e logs para auditoria.
+- A camada de administração fornece visibilidade ampla e ferramentas operacionais para garantir segurança, qualidade e resolução rápida de incidentes.
+
+Este relatório resume as entregas realizadas e a abrangência funcional da plataforma XJOBS para encerramento do projeto no Workana.

@@ -1,0 +1,191 @@
+curl --request POST \
+     --url https://api.pagar.me/core/v5/recipients \
+     --header 'accept: application/json' \
+     --header 'authorization: Basic c2tfdGVzdF84ZWVkOWI5ZGFjYWE0ZGY0YmVmMTY1ODc5ZmQ2MTBiYTo=' \
+     --header 'content-type: application/json' \
+     --data '
+{
+  "register_information": {
+    "phone_numbers": [
+      {
+        "ddd": "21",
+        "number": "994647568",
+        "type": "mobile"
+      }
+    ],
+    "main_address": {
+      "street": "Av. General Justo",
+      "complementary": "Bloco A",
+      "street_number": "375",
+      "neighborhood": "Centro",
+      "city": "Rio de Janeiro",
+      "state": "RJ",
+      "zip_code": "20021130",
+      "reference_point": "Ao lado da banca de jornal"
+    },
+    "company_name": "Recebedor pessoa juridica",
+    "trading_name": "Empresa LTDA",
+    "email": "empresax@avengers.com",
+    "document": "77699131000133",
+    "type": "corporation",
+    "site_url": "http://www.site.com",
+    "annual_revenue": 1000000,
+    "corporation_type": "LTDA",
+    "founding_date": "2010-10-30",
+    "managing_partners": [
+      {
+        "name": "Tony Stark",
+        "email": "tstark@avengers.com",
+        "document": "26224451990",
+        "type": "individual",
+        "mother_name": "Nome da mae",
+        "birthdate": "12/10/1995",
+        "monthly_income": 120000,
+        "professional_occupation": "Vendedor",
+        "self_declared_legal_representative": true,
+        "address": {
+          "street": "Av. General Justo",
+          "complementary": "Bloco A",
+          "street_number": "375",
+          "neighborhood": "Centro",
+          "city": "Rio de Janeiro",
+          "state": "RJ",
+          "zip_code": "20021130",
+          "reference_point": "Ao lado da banca de jornal"
+        },
+        "phone_numbers": [
+          {
+            "ddd": "27",
+            "number": "999992628",
+            "type": "mobile"
+          }
+        ]
+      }
+    ]
+  },
+  "default_bank_account": {
+    "holder_name": "Recebedor pessoa juridica",
+    "holder_type": "company",
+    "holder_document": "77699131000133",
+    "bank": "341",
+    "branch_number": "1234",
+    "branch_check_digit": "6",
+    "account_number": "12345",
+    "account_check_digit": "6",
+    "type": "checking"
+  }
+}
+'
+
+curl --request POST \
+     --url https://api.pagar.me/core/v5/recipients \
+     --header 'accept: application/json' \
+     --header 'authorization: Basic c2tfdGVzdF84ZWVkOWI5ZGFjYWE0ZGY0YmVmMTY1ODc5ZmQ2MTBiYTo=' \
+     --header 'content-type: application/json' \
+     --data '
+{
+  "register_information": {
+    "phone_numbers": [
+      {
+        "ddd": "21",
+        "number": "994647568",
+        "type": "mobile"
+      }
+    ],
+    "address": {
+      "street": "Av. General Justo",
+      "complementary": "Bloco A",
+      "street_number": "375",
+      "neighborhood": "Centro",
+      "city": "Rio de Janeiro",
+      "state": "RJ",
+      "zip_code": "20021130",
+      "reference_point": "Ao lado da banca de jornal"
+    },
+    "name": "Recebedor Pessoa fisica",
+    "email": "tstark@avengers.com",
+    "document": "26224451990",
+    "type": "individual",
+    "site_url": "https://sitedorecebedor.com.br",
+    "mother_name": "Nome da mae",
+    "birthdate": "12/10/1995",
+    "monthly_income": 120000,
+    "professional_occupation": "Vendedor"
+  },
+  "default_bank_account": {
+    "holder_name": "Tony Stark",
+    "holder_type": "individual",
+    "holder_document": "26224451990",
+    "bank": "341",
+    "branch_number": "1234",
+    "branch_check_digit": "6",
+    "account_number": "12345",
+    "account_check_digit": "6",
+    "type": "checking"
+  },
+  "code": "1234"
+}
+'
+
+curl -X POST https://api.pagar.me/core/v5/orders \
+  -H "accept: application/json" \
+  -H "content-type: application/json" \
+  -H "authorization: Basic c2tfdGVzdF84ZWVkOWI5ZGFjYWE0ZGY0YmVmMTY1ODc5ZmQ2MTBiYTo=" \
+  -d '{
+  "items": [
+    {
+      "amount": 10000,
+      "description": "Teste de Pagamento",
+      "quantity": 1,
+      "code": "TESTE"
+    }
+  ],
+  "customer": {
+    "name": "Cliente Teste",
+    "email": "cliente@teste.com",
+    "type": "individual",
+    "document": "11144477735",
+    "phones": {
+      "mobile_phone": {
+        "country_code": "55",
+        "area_code": "11",
+        "number": "999999999"
+      }
+    }
+  },
+  "payments": [
+    {
+      "payment_method": "credit_card",
+      "credit_card": {
+        "installments": 1,
+        "statement_descriptor": "XJOBS",
+        "card": {
+          "number": "4000000000000010",
+          "holder_name": "Cliente Teste",
+          "exp_month": 12,
+          "exp_year": 2029,
+          "cvv": "123",
+          "billing_address": {
+            "line_1": "123, Rua Teste, Centro",
+            "zip_code": "01234567",
+            "city": "São Paulo",
+            "state": "SP",
+            "country": "BR"
+          }
+        }
+      }
+    }
+  ],
+  "split": [
+    {
+      "recipient_id": "re_cmb9mudkk5wxd0l9t53q9nm8w",
+      "amount": 10000,
+      "type": "flat",
+      "options": {
+        "charge_processing_fee": false,
+        "charge_remainder_fee": true,
+        "liable": false
+      }
+    }
+  ]
+}'

@@ -1,0 +1,178 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Funções auxiliares
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function isModerator() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'moderator';
+    }
+    
+    function isManager() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'manager';
+    }
+    
+    function isAdminUser() {
+      return isManager() || isModerator();
+    }
+    
+    function isClient(chatId) {
+      return get(/databases/$(database)/documents/chats/$(chatId)).data.clientId == request.auth.uid;
+    }
+    
+    function isFreelancer(chatId) {
+      return get(/databases/$(database)/documents/chats/$(chatId)).data.freelancerId == request.auth.uid;
+    }
+    
+    function isParticipant(chatId) {
+      return isClient(chatId) || isFreelancer(chatId);
+    }
+    
+    function isBlocked(chatId) {
+      let chat = get(/databases/$(database)/documents/chats/$(chatId)).data;
+      return request.auth.uid in chat.blockedUsers;
+    }
+
+    // Regras para a coleção de usuários
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdminUser());
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (isOwner(userId) || isAdminUser());
+      allow delete: if isManager();
+      allow list: if isAdminUser(); // Apenas admins podem listar todos os usuários
+    }
+
+    // Regras para a coleção de presença
+    match /presence/{userId} {
+      // Usuários só podem escrever sua própria presença
+      allow write: if request.auth != null && request.auth.uid == userId;
+      
+      // Qualquer usuário logado pode ler o status de presença de outros
+      allow read: if request.auth != null;
+    }
+    
+    // Regras para a coleção de chats
+    match /chats/{chatId} {
+      allow read: if isAuthenticated() && (isParticipant(chatId) || isAdminUser());
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        isParticipant(chatId) || 
+        isAdminUser() || 
+        (isClient(chatId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fundsReleased', 'fundsReleasedAt', 'updatedAt']))
+      );
+      allow delete: if isAdminUser();
+      allow list: if isAdminUser(); // Admins podem listar todos os chats
+      
+      // Regras para mensagens
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && (isParticipant(chatId) || isAdminUser()) && !isBlocked(chatId);
+        allow create: if isAuthenticated() && (isParticipant(chatId) || isAdminUser()) && !isBlocked(chatId);
+        allow update: if isAdminUser();
+        allow delete: if false; // Mensagens não podem ser deletadas
+      }
+    }
+    
+    // Regras para a coleção mail
+    match /mail/{mailId} {
+      allow read: if false; // Apenas o Firebase Email trigger pode ler
+      allow create: if isAuthenticated() && (
+        request.resource.data.to is string &&
+        request.resource.data.message.subject is string &&
+        request.resource.data.message.html is string
+      );
+      allow update, delete: if false;
+    }
+    
+    // Regras para projetos - admins podem ver todos
+    match /projects/{projectId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (isOwner(resource.data.clientId) || isAdminUser());
+      allow delete: if isAuthenticated() && (isOwner(resource.data.clientId) || isAdminUser());
+      allow list: if isAuthenticated();
+    }
+
+    // ===== Escrow / Pagamentos =====
+    // projectPayments: registros do pagamento/escrow do projeto
+    match /projectPayments/{paymentId} {
+      allow read: if isAuthenticated() && (
+        isOwner(resource.data.clientId) ||
+        isOwner(resource.data.freelancerId) ||
+        isAdminUser()
+      );
+      // Permitir criação pelo cliente dono do projeto
+      allow create: if isAuthenticated() && isOwner(request.resource.data.clientId);
+      // Atualizações somente por admins (ou Cloud Functions com admin SDK)
+      allow update, delete: if isAdminUser();
+      allow list: if isAdminUser();
+    }
+
+    // fundHolds: controle de valores retidos por projeto
+    match /fundHolds/{holdId} {
+      allow read: if isAuthenticated() && (
+        // Dono do projeto
+        (isOwner(get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.clientId)) ||
+        // Freelancer selecionado
+        (request.auth.uid == get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.selectedFreelancerId) ||
+        isAdminUser()
+      );
+      // Permitir criação pelo cliente dono do projeto
+      allow create: if isAuthenticated() && (
+        isOwner(get(/databases/$(database)/documents/projects/$(request.resource.data.projectId)).data.clientId)
+      );
+      allow update, delete: if isAdminUser();
+      allow list: if isAdminUser();
+    }
+
+    // fundReleases: solicitações/liberações de fundos
+    match /fundReleases/{releaseId} {
+      allow read: if isAuthenticated() && (
+        // Cliente dono do projeto
+        (isOwner(get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.clientId)) ||
+        // Freelancer selecionado
+        (request.auth.uid == get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.selectedFreelancerId) ||
+        isAdminUser()
+      );
+      // Criar liberação somente pelo cliente do projeto
+      allow create: if isAuthenticated() && (
+        isOwner(get(/databases/$(database)/documents/projects/$(request.resource.data.projectId)).data.clientId)
+      );
+      // Atualizações ficam restritas a admins/CFs
+      allow update, delete: if isAdminUser();
+      allow list: if isAdminUser();
+    }
+
+    // fundTransactions: histórico de transações
+    match /fundTransactions/{txId} {
+      allow read: if isAuthenticated() && (
+        isOwner(resource.data.toUserId) ||
+        isOwner(resource.data.fromUserId) ||
+        isAdminUser()
+      );
+      // Escrita apenas por backend/admin
+      allow create, update, delete: if isAdminUser();
+      allow list: if isAdminUser();
+    }
+
+    // withdrawRequests: solicitações de saque do freelancer
+    match /withdrawRequests/{withdrawId} {
+      allow read: if isAuthenticated() && (
+        isOwner(resource.data.freelancerId) || isAdminUser()
+      );
+      allow create: if isAuthenticated() && request.resource.data.freelancerId == request.auth.uid;
+      allow update, delete: if isAdminUser();
+      allow list: if isAdminUser();
+    }
+    
+    // Regras gerais (fallback) - mais restritivas agora
+    match /{document=**} {
+      allow read, write: if false; // Negar por padrão - usar regras específicas acima
+    }
+  }
+} 

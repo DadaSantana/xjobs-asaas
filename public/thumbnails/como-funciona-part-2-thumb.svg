@@ -1,0 +1,6 @@
+<svg width="640" height="360" viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg">
+  <rect width="640" height="360" fill="#059669"/>
+  <circle cx="320" cy="180" r="40" fill="white" opacity="0.9"/>
+  <polygon points="310,165 310,195 340,180" fill="#059669"/>
+  <text x="320" y="240" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="16" font-weight="bold">Como se inscrever como freelancer</text>
+</svg>

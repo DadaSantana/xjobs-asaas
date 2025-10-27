@@ -1,0 +1,57 @@
+{
+    "customer": {
+        "name": "Tony Stark",
+        "email": "avengerstark@ligadajustica.com.br",
+        "document": "11144477735",
+        "type": "individual",
+        "phones": {
+            "mobile_phone": {
+                "country_code": "55",
+                "area_code": "11",
+                "number": "999999999"
+            }
+        }
+    },
+    "items": [
+        {
+            "amount": 10000,
+            "description": "Teste Split R$100",
+            "quantity": 1,
+            "code": "SPLIT100"
+        }
+    ],
+    "payments": [
+        {
+            "payment_method": "credit_card",
+            "credit_card": {
+                "installments": 1,
+                "statement_descriptor": "XJOBS",
+                "card": {
+                    "number": "4000000000000010",
+                    "holder_name": "Tony Stark",
+                    "exp_month": 1,
+                    "exp_year": 30,
+                    "cvv": "3531",
+                    "billing_address": {
+                        "line_1": "123, Rua Teste, Centro",
+                        "zip_code": "01234567",
+                        "city": "São Paulo",
+                        "state": "SP",
+                        "country": "BR"
+                    }
+                }
+            }
+        }
+    ],
+    "split": [
+        {
+            "recipient_id": "re_cmb9mudkk5wxd0l9t53q9nm8w",
+            "amount": 1000,
+            "type": "flat",
+            "options": {
+                "charge_processing_fee": false,
+                "liable": false
+            }
+        }
+    ]
+}
