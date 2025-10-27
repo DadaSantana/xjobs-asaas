@@ -697,12 +697,22 @@ export class ProjectService {
 
       const projectData = projectDoc.data();
       
+      // Preparar objeto da entrega removendo campos undefined
+      const deliveryData: any = {
+        id: delivery.id,
+        percentage: delivery.percentage,
+        deliveredAt: Timestamp.fromDate(delivery.deliveredAt),
+        status: delivery.status
+      };
+      
+      // Adicionar descrição apenas se não for undefined
+      if (delivery.description && delivery.description.trim() !== '') {
+        deliveryData.description = delivery.description;
+      }
+      
       // Adicionar entrega ao array
       await updateDoc(projectRef, {
-        partialDeliveries: arrayUnion({
-          ...delivery,
-          deliveredAt: Timestamp.fromDate(delivery.deliveredAt)
-        }),
+        partialDeliveries: arrayUnion(deliveryData),
         updatedAt: Timestamp.now()
       });
 
