@@ -121,6 +121,11 @@ export interface ProjectPayment {
   platformFee?: number; // Taxa da plataforma (10%)
   freelancerAmount?: number; // Valor líquido para o freelancer (90%)
   
+  // Método de pagamento e datas
+  paymentMethod?: 'PIX' | 'CREDIT_CARD' | 'BOLETO' | 'DEBIT_CARD' | 'UNDEFINED';
+  paidAt?: Timestamp; // Data que o pagamento foi confirmado
+  availableAt?: Timestamp; // Data que o valor ficará disponível para saque
+  
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

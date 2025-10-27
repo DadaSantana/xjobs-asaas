@@ -34,11 +34,13 @@ const MinhasFinancas = () => {
     totalReleased: number;
     pendingAmount: number;
     availableBalance: number;
+    pendingBalance: number; // Liberado mas ainda bloqueado por prazo
     pendingWithdrawals?: number;
   } | null>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [withdrawValue, setWithdrawValue] = useState<string>("");
   const [releases, setReleases] = useState<any[]>([]);
+  const [pendingReleases, setPendingReleases] = useState<any[]>([]); // Liberações com prazo pendente
 
   const handleSubmit = async (data: BankAccount) => {
     if (!userProfile?.uid) return;
@@ -90,9 +92,13 @@ const MinhasFinancas = () => {
           FundsService.getFreelancerTransactions(userProfile.uid),
           FundsService.getFreelancerReleases(userProfile.uid)
         ]);
-        setSummary({ ...sum, pendingWithdrawals: sum.pendingWithdrawals || 0 });
+        setSummary({ ...sum, pendingWithdrawals: sum.pendingWithdrawals || 0, pendingBalance: sum.pendingBalance || 0 });
         setTransactions(txs);
         setReleases(rls);
+        
+        // Buscar liberações com prazo pendente
+        const pending = await FundsService.getPendingReleases(userProfile.uid);
+        setPendingReleases(pending);
       } catch (e) {
         toast({ title: 'Erro', description: 'Falha ao carregar saldo/transações', variant: 'destructive' });
       } finally {
@@ -211,6 +217,7 @@ const MinhasFinancas = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
               <div className="text-center p-3 md:p-4 bg-green-50 rounded-lg">
                 <div className="text-xs md:text-sm text-gray-600">Saldo Disponível</div>
+                <div className="text-xs text-gray-500 mb-1">Disponível para saque</div>
                 <div className="text-lg md:text-2xl font-bold text-green-700">{formatCurrency(summary.availableBalance)}</div>
                 <Button
                   size="sm"
@@ -323,13 +330,14 @@ const MinhasFinancas = () => {
                 <div className="text-xs md:text-sm text-gray-600">Total Liberado</div>
                 <div className="text-lg md:text-2xl font-bold text-blue-700">{formatCurrency(summary.totalReleased)}</div>
               </div>
+              <div className="text-center p-3 md:p-4 bg-orange-50 rounded-lg">
+                <div className="text-xs md:text-sm text-gray-600">Pendente</div>
+                <div className="text-xs text-gray-500 mb-1">Aguardando prazo</div>
+                <div className="text-lg md:text-2xl font-bold text-orange-700">{formatCurrency(summary.pendingBalance)}</div>
+              </div>
               <div className="text-center p-3 md:p-4 bg-amber-50 rounded-lg">
                 <div className="text-xs md:text-sm text-gray-600">A Liberar</div>
                 <div className="text-lg md:text-2xl font-bold text-amber-700">{formatCurrency(summary.pendingAmount)}</div>
-              </div>
-              <div className="text-center p-3 md:p-4 bg-purple-50 rounded-lg">
-                <div className="text-xs md:text-sm text-gray-600">Saques Pendentes</div>
-                <div className="text-lg md:text-2xl font-bold text-purple-700">{formatCurrency(summary.pendingWithdrawals)}</div>
               </div>
             </div>
           ) : (
@@ -337,6 +345,41 @@ const MinhasFinancas = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Valores Pendentes - Aguardando Liberação */}
+      {pendingReleases.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-orange-500" />
+              Valores Pendentes de Liberação
+            </CardTitle>
+            <CardDescription>
+              Valores já liberados pelo cliente mas aguardando prazo de compensação (cartão de crédito)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {pendingReleases.map((release, idx) => (
+                <div key={idx} className="flex items-center justify-between p-4 bg-orange-50 rounded-lg border border-orange-200">
+                  <div className="flex-1">
+                    <div className="font-medium text-gray-900">{release.projectTitle || 'Projeto'}</div>
+                    <div className="text-sm text-gray-600 mt-1">
+                      Método: <Badge variant="outline">{release.paymentMethod === 'CREDIT_CARD' ? 'Cartão de Crédito' : release.paymentMethod}</Badge>
+                    </div>
+                    <div className="text-sm text-orange-600 mt-1">
+                      Disponível em: <strong>{release.availableDate}</strong>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-bold text-orange-700">{formatCurrency(release.amount)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Solicitar Saque */}
       <Card>

@@ -425,7 +425,13 @@ export const asaasWebhook = functions.https.onRequest(async (req, res) => {
 /**
  * Processa pagamento confirmado
  */
-async function processPaymentConfirmed(paymentData: { id: string; [key: string]: unknown }) {
+async function processPaymentConfirmed(paymentData: { 
+  id: string; 
+  billingType?: string; 
+  clientPaymentDate?: string;
+  confirmedDate?: string;
+  [key: string]: unknown 
+}) {
   try {
     const paymentId = paymentData.id;
     console.log('[Asaas Webhook] Processando pagamento confirmado:', paymentId);
@@ -446,16 +452,41 @@ async function processPaymentConfirmed(paymentData: { id: string; [key: string]:
       return;
     }
 
+    // Determinar método de pagamento
+    const paymentMethod = paymentData.billingType as string || 'UNDEFINED';
+    
+    // Calcular data de disponibilidade
+    // PIX: Disponível imediatamente
+    // CREDIT_CARD: Disponível após 35 dias
+    const paidDate = paymentData.clientPaymentDate || paymentData.confirmedDate || new Date().toISOString().split('T')[0];
+    const paidTimestamp = admin.firestore.Timestamp.fromDate(new Date(paidDate));
+    
+    const availableDate = new Date(paidDate);
+    if (paymentMethod === 'CREDIT_CARD') {
+      // Cartão de crédito: +35 dias
+      availableDate.setDate(availableDate.getDate() + 35);
+    }
+    // PIX e outros: disponível imediatamente
+    
+    const availableTimestamp = admin.firestore.Timestamp.fromDate(availableDate);
+
     // Atualizar status do pagamento
     await paymentDoc.ref.update({
       paymentStatus: 'paid',
       escrowStatus: 'held',
       totalPaid: payment.totalAmount || 0,
       totalHeld: payment.freelancerAmount || 0, // Apenas 90% fica retido para o freelancer
+      paymentMethod: paymentMethod,
+      paidAt: paidTimestamp,
+      availableAt: availableTimestamp,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    console.log('[Asaas Webhook] Status do pagamento atualizado');
+    console.log('[Asaas Webhook] Status do pagamento atualizado', {
+      paymentMethod,
+      paidAt: paidDate,
+      availableAt: availableDate.toISOString().split('T')[0],
+    });
 
     // Criar fundHold
     const holdData = {

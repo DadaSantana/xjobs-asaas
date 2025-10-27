@@ -730,6 +730,7 @@ export class FundsService {
     totalReleased: number;
     pendingAmount: number;
     availableBalance: number;
+    pendingBalance: number; // Liberado mas ainda bloqueado (cartão de crédito)
     pendingWithdrawals?: number;
   }> {
     try {
@@ -788,6 +789,50 @@ export class FundsService {
         totalWithdrawn += Number(tx.amount || 0);
       });
 
+      // Buscar liberações para calcular saldo disponível vs pendente
+      const releasesQuery = query(
+        collection(db, 'fundReleases'),
+        where('freelancerId', '==', freelancerId),
+        where('status', '==', 'released')
+      );
+      const releasesSnapshot = await getDocs(releasesQuery);
+      
+      let availableForWithdraw = 0;
+      let pendingForRelease = 0;
+      const now = new Date();
+
+      for (const releaseDoc of releasesSnapshot.docs) {
+        const release = releaseDoc.data();
+        const releaseAmount = Number(release.amount || 0);
+        
+        // Buscar dados do pagamento original para verificar método e data
+        const projectPayment = await this.getProjectPayment(release.projectId);
+        
+        if (projectPayment) {
+          const paymentMethod = projectPayment.paymentMethod;
+          const availableAt = projectPayment.availableAt;
+          
+          // Se tem data de disponibilidade, verificar se já passou
+          if (availableAt && availableAt.toDate) {
+            const availableDate = availableAt.toDate();
+            
+            if (now >= availableDate) {
+              // Já está disponível
+              availableForWithdraw += releaseAmount;
+            } else {
+              // Ainda pendente (aguardando prazo)
+              pendingForRelease += releaseAmount;
+            }
+          } else {
+            // Sem data definida, considerar disponível (PIX ou legado)
+            availableForWithdraw += releaseAmount;
+          }
+        } else {
+          // Sem informação de pagamento, considerar disponível
+          availableForWithdraw += releaseAmount;
+        }
+      }
+
       // Buscar propostas aceitas para calcular ganhos totais
       const proposalsQuery = query(
         collection(db, 'projectProposals'),
@@ -802,16 +847,18 @@ export class FundsService {
         totalEarnings += proposal.proposedBudget || 0;
       });
 
-      // Calcular valores pendentes (ganhos totais - liberado)
-      const pendingAmount = totalEarnings - totalReleased;
-      const availableBalance = Math.max(totalReleased - totalWithdrawn, 0);
+      // Calcular valores
+      const pendingAmount = totalEarnings - totalReleased; // Ainda não liberado
+      const availableBalance = Math.max(availableForWithdraw - totalWithdrawn, 0); // Disponível para saque
+      const pendingBalance = pendingForRelease; // Liberado mas bloqueado por prazo
 
       console.log('getFreelancerBalance: Resumo final:', {
         totalEarnings,
         totalReleased,
         totalWithdrawn,
         pendingAmount,
-        availableBalance
+        availableBalance,
+        pendingBalance,
       });
 
       // Saques pendentes (se existirem)
@@ -834,6 +881,7 @@ export class FundsService {
         totalReleased,
         pendingAmount,
         availableBalance,
+        pendingBalance,
         pendingWithdrawals
       };
       
@@ -846,8 +894,82 @@ export class FundsService {
         totalReleased: 0,
         pendingAmount: 0,
         availableBalance: 0,
+        pendingBalance: 0,
         pendingWithdrawals: 0
       };
+    }
+  }
+
+  // Buscar informações de pagamento de um projeto
+  private static async getProjectPayment(projectId: string): Promise<any | null> {
+    try {
+      const q = query(
+        collection(db, 'projectPayments'),
+        where('projectId', '==', projectId),
+        limit(1)
+      );
+      const snapshot = await getDocs(q);
+      
+      if (!snapshot.empty) {
+        return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+      }
+      return null;
+    } catch (error) {
+      console.error('Erro ao buscar pagamento do projeto:', error);
+      return null;
+    }
+  }
+
+  // Buscar liberações pendentes (aguardando prazo de cartão)
+  static async getPendingReleases(freelancerId: string): Promise<any[]> {
+    try {
+      const releasesQuery = query(
+        collection(db, 'fundReleases'),
+        where('freelancerId', '==', freelancerId),
+        where('status', '==', 'released')
+      );
+      const releasesSnapshot = await getDocs(releasesQuery);
+      
+      const now = new Date();
+      const pendingReleases = [];
+
+      for (const releaseDoc of releasesSnapshot.docs) {
+        const release = releaseDoc.data();
+        const releaseAmount = Number(release.amount || 0);
+        
+        // Buscar dados do pagamento original
+        const projectPayment = await this.getProjectPayment(release.projectId);
+        
+        if (projectPayment && projectPayment.availableAt) {
+          const availableAt = projectPayment.availableAt;
+          
+          if (availableAt && availableAt.toDate) {
+            const availableDate = availableAt.toDate();
+            
+            // Se ainda não está disponível
+            if (now < availableDate) {
+              const dateFormat = require('date-fns');
+              pendingReleases.push({
+                projectId: release.projectId,
+                projectTitle: release.projectTitle || 'Projeto',
+                amount: releaseAmount,
+                paymentMethod: projectPayment.paymentMethod || 'UNDEFINED',
+                paidAt: projectPayment.paidAt ? projectPayment.paidAt.toDate() : null,
+                availableDate: dateFormat.format(availableDate, "dd/MM/yyyy"),
+                availableDateRaw: availableDate,
+              });
+            }
+          }
+        }
+      }
+
+      // Ordenar por data de disponibilidade (mais próxima primeiro)
+      pendingReleases.sort((a, b) => a.availableDateRaw - b.availableDateRaw);
+
+      return pendingReleases;
+    } catch (error) {
+      console.error('Erro ao buscar liberações pendentes:', error);
+      return [];
     }
   }
 
