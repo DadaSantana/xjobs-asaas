@@ -14,7 +14,7 @@ import { FundsService } from '@/services/fundsService';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { BankAccount } from '@/types/bankAccount';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 const MinhasFinancas = () => {
@@ -24,6 +24,9 @@ const MinhasFinancas = () => {
   // Verificar se tem dados bancários configurados (novo sistema simplificado)
   const hasBankAccount = !!userProfile?.bankAccount;
   const bankAccountData = userProfile?.bankAccount;
+  
+  console.log('[MinhasFinancas] Render - hasBankAccount:', hasBankAccount);
+  console.log('[MinhasFinancas] Render - bankAccountData:', bankAccountData ? 'exists' : 'null');
   const [showModal, setShowModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
@@ -43,34 +46,51 @@ const MinhasFinancas = () => {
   const [pendingReleases, setPendingReleases] = useState<any[]>([]); // Liberações com prazo pendente
 
   const handleSubmit = async (data: BankAccount) => {
-    if (!userProfile?.uid) return;
+    if (!userProfile?.uid) {
+      console.log('[MinhasFinancas] handleSubmit - userProfile.uid não encontrado');
+      return;
+    }
+    
+    console.log('[MinhasFinancas] handleSubmit - Iniciando salvamento dos dados bancários');
+    console.log('[MinhasFinancas] Dados recebidos:', data);
     
     setIsSubmitting(true);
     try {
       // Salvar dados bancários no Firestore (campo bankAccount do usuário)
       const userRef = doc(db, 'users', userProfile.uid);
+      
+      const bankAccountData = {
+        ...data,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        verified: false, // Será verificado posteriormente se necessário
+      };
+      
+      console.log('[MinhasFinancas] Salvando no Firestore:', bankAccountData);
+      
       await updateDoc(userRef, {
-        bankAccount: {
-          ...data,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          verified: false, // Será verificado posteriormente se necessário
-        },
+        bankAccount: bankAccountData,
+      });
+
+      console.log('[MinhasFinancas] Dados salvos com sucesso no Firestore');
+
+      toast({
+        title: "Sucesso!",
+        description: "Dados bancários salvos com sucesso. Atualizando...",
       });
 
       setShowModal(false);
-      toast({
-        title: "Sucesso!",
-        description: "Dados bancários salvos com sucesso.",
-      });
-
-      // Recarregar dados
+      
+      // Aguardar um pouco antes de recarregar para garantir que o Firestore sincronizou
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      console.log('[MinhasFinancas] Recarregando página...');
       window.location.reload();
     } catch (err) {
-      console.error('Erro ao salvar dados bancários:', err);
+      console.error('[MinhasFinancas] Erro ao salvar dados bancários:', err);
       toast({
         title: "Erro",
-        description: "Erro ao salvar dados bancários. Tente novamente.",
+        description: err instanceof Error ? err.message : "Erro ao salvar dados bancários. Tente novamente.",
         variant: "destructive",
       });
     } finally {
