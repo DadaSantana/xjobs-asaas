@@ -948,14 +948,13 @@ export class FundsService {
             
             // Se ainda não está disponível
             if (now < availableDate) {
-              const dateFormat = require('date-fns');
               pendingReleases.push({
                 projectId: release.projectId,
                 projectTitle: release.projectTitle || 'Projeto',
                 amount: releaseAmount,
                 paymentMethod: projectPayment.paymentMethod || 'UNDEFINED',
                 paidAt: projectPayment.paidAt ? projectPayment.paidAt.toDate() : null,
-                availableDate: dateFormat.format(availableDate, "dd/MM/yyyy"),
+                availableDate: format(availableDate, "dd/MM/yyyy"),
                 availableDateRaw: availableDate,
               });
             }
