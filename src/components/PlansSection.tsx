@@ -4,27 +4,13 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import React, { useEffect, useState } from 'react';
-import { auth, functions } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
-
-interface Plan {
-  id: string;
-  name: string;
-  description?: string;
-  status: string;
-  pricing_scheme?: { price?: number };
-  messageLimit?: number;
-  likeLimit?: number;
-  subscribers?: number;
-  interval_count?: number;
-  price?: number; // Added for rendering
-  category?: number; // Categoria do plano (1, 3, 6, 12)
-}
-
-const LIST_PLANS_URL = 'https://us-central1-xjobs-a43d2.cloudfunctions.net/listPlans';
-const CREATE_ASAAS_SUBSCRIPTION_URL = 'https://us-central1-xjobs-a43d2.cloudfunctions.net/createAsaasSubscription';
+import { doc, getDoc } from 'firebase/firestore';
+import { Plan } from '@/types/plan';
+import { getActivePlans, getCategoryLabel } from '@/services/planService';
+import { CheckoutDialog } from '@/components/CheckoutDialog';
 
 const periodLabels: Record<number, string> = {
   1: 'Mensal',
@@ -46,6 +32,8 @@ const PlansSection = ({ showAsSection = true, currentPlan, onSelectPlan, isLandi
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [plansStatus, setPlansStatus] = useState<boolean | null>(null);
+  const [checkoutPlan, setCheckoutPlan] = useState<Plan | null>(null);
+  const [showCheckout, setShowCheckout] = useState(false);
 
   useEffect(() => {
     const fetchPlansStatusAndPlans = async () => {
@@ -57,14 +45,14 @@ const PlansSection = ({ showAsSection = true, currentPlan, onSelectPlan, isLandi
         const status = settingsDoc.exists() ? settingsDoc.data().status === true : false;
         setPlansStatus(status);
         if (status) {
-          // Buscar planos do Firestore
-          const plansSnap = await getDocs(collection(db, 'plans'));
-          const plansData = plansSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Plan[];
-          setPlans(plansData.filter((p: any) => !p.status || p.status === 'active'));
+          // Buscar planos ativos do Asaas
+          const plansData = await getActivePlans();
+          setPlans(plansData);
         } else {
           setPlans([]);
         }
       } catch (err: any) {
+        console.error('Erro ao buscar planos:', err);
         setError(err.message || 'Erro desconhecido');
         setPlansStatus(false);
         setPlans([]);
@@ -92,6 +80,16 @@ const PlansSection = ({ showAsSection = true, currentPlan, onSelectPlan, isLandi
     messageLimit: 1,
     likeLimit: 12,
     category: 1,
+    cycle: 'MONTHLY',
+    gateway: 'asaas',
+    features: [
+      { id: '1', label: 'Perfil profissional completo', enabled: true },
+      { id: '2', label: 'Portfolio ilimitado', enabled: true },
+    ],
+    cardStyle: {
+      highlighted: true,
+      badge: { text: 'RECOMENDADO', bgColor: '#10b981', textColor: '#ffffff' }
+    }
   };
 
   // Agrupar planos por categoria
@@ -119,31 +117,7 @@ const PlansSection = ({ showAsSection = true, currentPlan, onSelectPlan, isLandi
       return;
     }
   
-    // Se está na landing page, SEMPRE redirecionar para login/cadastro primeiro
-    if (isLandingPage) {
-      // Salvar intenção de assinar plano no localStorage
-      localStorage.setItem('pendingPlanSubscription', JSON.stringify({
-        planId: plan.id,
-        planName: plan.name,
-        price: plan.price,
-        timestamp: Date.now()
-      }));
-      
-      // Se não está logado, redirecionar para login
-      if (!user) {
-        const currentPath = window.location.pathname;
-        const redirectUrl = `/login?redirect=${encodeURIComponent(currentPath)}&action=subscribe-plan&planId=${plan.id}&planName=${encodeURIComponent(plan.name)}`;
-        
-        window.location.href = redirectUrl;
-        return;
-      }
-      
-      // Se está logado, redirecionar para área de planos
-      window.location.href = '/freelancer/meus-planos';
-      return;
-    }
-  
-    // Se não está na landing page, verificar se o usuário está autenticado
+    // Se não está autenticado, redirecionar para login
     if (!user) {
       // Salvar intenção de assinar plano no localStorage
       localStorage.setItem('pendingPlanSubscription', JSON.stringify({
@@ -161,94 +135,68 @@ const PlansSection = ({ showAsSection = true, currentPlan, onSelectPlan, isLandi
       return;
     }
   
-    // Lógica para planos pagos: criar assinatura no Asaas
-    try {
-      console.log('Iniciando criação de assinatura Asaas para plano:', plan);
-      const idToken = await user.getIdToken();
-
-      const body = {
-        planId: plan.id,
-        planName: plan.name,
-        price: plan.price ? plan.price / 100 : 0, // Converter de centavos para reais
-        category: plan.category || 1, // 1, 3, 6, 12 (mensal, trimestral, semestral, anual)
-        likeLimit: plan.likeLimit ?? null,
-        messageLimit: plan.messageLimit ?? null,
-      };
-
-      console.log('Dados enviados para createAsaasSubscription:', body);
-
-      const resp = await fetch(CREATE_ASAAS_SUBSCRIPTION_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(body),
-      });
-
-      const json = await resp.json().catch(() => ({}));
-      console.log('Resposta da função Asaas:', json);
-
-      if (!resp.ok) {
-        const message = (json && (json.error || json.message)) || 'Erro ao criar assinatura.';
-        throw new Error(message);
-      }
-
-      if (json && json.success) {
-        alert(`Assinatura criada com sucesso! ID: ${json.subscriptionId}`);
-        
-        // Redirecionar para página de planos do usuário
-        window.location.href = '/freelancer/meus-planos';
-        return;
-      }
-
-      throw new Error('Resposta inesperada ao criar assinatura.');
-    } catch (err: any) {
-      console.error('Erro ao criar assinatura:', err);
-      alert(err?.message || 'Erro desconhecido ao criar assinatura.');
-    }
+    // Se está autenticado, abrir modal de checkout
+    setCheckoutPlan(plan);
+    setShowCheckout(true);
   };
 
   const renderPlanCard = (plan: Plan) => {
     const isFreePlan = plan.id === 'free';
+    const isHighlighted = plan.cardStyle?.highlighted || false;
+    const badge = plan.cardStyle?.badge;
     
     return (
-      <Card key={plan.id} className={`relative flex flex-col h-full transition-all duration-300 hover:shadow-xl border-2 ${isFreePlan ? 'border-green-500 hover:border-green-600 bg-gradient-to-br from-green-50 to-white shadow-lg' : 'border-gray-200 hover:border-blue-300'}`}>
-        {isFreePlan && (
+      <Card key={plan.id} className={`relative flex flex-col h-full transition-all duration-300 hover:shadow-xl border-2 ${
+        isHighlighted 
+          ? 'border-blue-500 hover:border-blue-600 shadow-lg' 
+          : 'border-gray-200 hover:border-blue-300'
+      }`}>
+        {isHighlighted && badge?.text && (
           <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
-            <Badge className="bg-green-500 text-white px-4 py-1 text-sm font-semibold">
+            <Badge 
+              className="px-4 py-1 text-sm font-semibold"
+              style={{ 
+                backgroundColor: badge.bgColor, 
+                color: badge.textColor 
+              }}
+            >
               <Star className="h-3 w-3 mr-1" />
-              RECOMENDADO
+              {badge.text}
             </Badge>
           </div>
         )}
         <CardHeader className="text-center pb-6 pt-8">
-          <CardTitle className={`text-3xl font-bold ${isFreePlan ? 'text-green-700' : 'text-gray-900'}`}>
+          <CardTitle className={`text-3xl font-bold ${isHighlighted ? 'text-blue-700' : 'text-gray-900'}`}>
             {plan.name}
           </CardTitle>
+          {plan.description && (
+            <p className="text-gray-600 text-sm mt-2">{plan.description}</p>
+          )}
           <div className="mt-3 space-y-3">
             <div className="flex items-center justify-center gap-2">
               <Check className="h-5 w-5 text-green-500" />
-              <span className="font-medium">{plan.likeLimit ?? '-'} curtidas/mês</span>
+              <span className="font-medium">
+                {plan.likeLimit === null ? 'Curtidas ilimitadas' : `${plan.likeLimit} curtidas/mês`}
+              </span>
             </div>
             <div className="flex items-center justify-center gap-2">
               <Check className="h-5 w-5 text-green-500" />
-              <span className="font-medium">{plan.messageLimit ?? '-'} mensagem por projeto</span>
+              <span className="font-medium">
+                {plan.messageLimit === null ? 'Mensagens ilimitadas' : `${plan.messageLimit} mensagens/projeto`}
+              </span>
             </div>
-            <div className="flex items-center justify-center gap-2">
-              <Check className="h-5 w-5 text-green-500" />
-              <span className="font-medium">Perfil profissional completo</span>
-            </div>
-            <div className="flex items-center justify-center gap-2">
-              <Check className="h-5 w-5 text-green-500" />
-              <span className="font-medium">Portfolio ilimitado</span>
-            </div>
+            {plan.features?.filter(f => f.enabled).map((feature) => (
+              <div key={feature.id} className="flex items-center justify-center gap-2">
+                <Check className="h-5 w-5 text-green-500" />
+                <span className="font-medium">{feature.label}</span>
+              </div>
+            ))}
           </div>
         </CardHeader>
         <CardContent className="text-center flex-1 flex flex-col justify-between">
           <div className="mb-6">
-            <div className={`text-5xl font-bold mb-2 ${isFreePlan ? 'text-green-600' : 'text-blue-600'}`}>
-              {isFreePlan ? 'R$ 0,00' : (plan.price ? `R$ ${(plan.price / 100).toFixed(2)}` : '-')}
+            <div className={`text-5xl font-bold mb-2 ${isHighlighted ? 'text-blue-600' : 'text-gray-900'}`}>
+              R$ {(plan.price / 100).toFixed(2)}
               <span className="text-lg text-gray-500">/mês</span>
             </div>
             {isFreePlan && (
@@ -341,12 +289,28 @@ const PlansSection = ({ showAsSection = true, currentPlan, onSelectPlan, isLandi
 
   if (showAsSection) {
     return (
-      <section className="py-20 bg-gradient-to-br from-gray-50 to-white">
-        {content}
-      </section>
+      <>
+        <section className="py-20 bg-gradient-to-br from-gray-50 to-white">
+          {content}
+        </section>
+        <CheckoutDialog 
+          open={showCheckout} 
+          onOpenChange={setShowCheckout} 
+          plan={checkoutPlan}
+        />
+      </>
     );
   }
-  return content;
+  return (
+    <>
+      {content}
+      <CheckoutDialog 
+        open={showCheckout} 
+        onOpenChange={setShowCheckout} 
+        plan={checkoutPlan}
+      />
+    </>
+  );
 };
 
 export default PlansSection;

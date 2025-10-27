@@ -7,7 +7,7 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { Provider } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
 import { store, persistor } from './store/store';
-import { useAuthWithPresence } from './hooks/useAuth';
+import { useAuthListener } from './hooks/useAuth';
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Cadastro from "./pages/Cadastro";
@@ -27,7 +27,7 @@ import ManagerUserDetail from "./pages/manager/ManagerUserDetail";
 import ManagerTeam from "./pages/manager/ManagerTeam";
 import CreateTeamMember from "./pages/manager/CreateTeamMember";
 import ManagerChats from "./pages/manager/ManagerChats";
-import ManagerPlans from "./pages/manager/ManagerPlans";
+import ManagerPlansAsaas from "./pages/manager/ManagerPlansAsaas";
 import ManagerFeaturedFreelancers from "./pages/manager/ManagerFeaturedFreelancers";
 import ManagerSupport from "./pages/manager/ManagerSupport";
 import ManagerProjects from "./pages/manager/ManagerProjects";
@@ -39,7 +39,7 @@ import TermosCondicoes from "./pages/TermosCondicoes";
 const queryClient = new QueryClient();
 
 const AppContent = () => {
-  useAuthWithPresence();
+  useAuthListener();
   const location = useLocation();
 
   console.log('AppContent renderizado');
@@ -91,7 +91,7 @@ const AppContent = () => {
             <Route path="team" element={<ManagerTeam />} />
           <Route path="team/new" element={<CreateTeamMember />} />
           <Route path="chats" element={<ManagerChats />} />
-          <Route path="plans" element={<ManagerPlans />} />
+          <Route path="plans" element={<ManagerPlansAsaas />} />
           <Route path="projects" element={<ManagerProjects />} />
           <Route path="projects/:id" element={<ManagerProjectDetail />} />
           <Route path="featured-freelancers" element={<ManagerFeaturedFreelancers />} />

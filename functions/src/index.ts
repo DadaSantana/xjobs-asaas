@@ -44,6 +44,14 @@ export {
   transferToFreelancerAsaas
 } from './asaasPlans';
 
+// Funções de gerenciamento de planos Asaas
+export {
+  createAsaasPlan,
+  updateAsaasPlan,
+  deleteAsaasPlan,
+  listAsaasPlans
+} from './asaasPlansManagement';
+
 export {
   createRecipient,
   checkRecipient,
