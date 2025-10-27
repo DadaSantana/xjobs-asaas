@@ -1,4 +1,4 @@
- import { useEffect } from 'react';
+import { useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
 import { useAppDispatch } from './redux';
@@ -35,6 +35,25 @@ const convertTimestampsToISO = (userProfile: UserProfile): SerializedUserProfile
     };
   }
 
+  // Converter bankAccount se existir
+  let serializedBankAccount = undefined as SerializedUserProfile['bankAccount'] | undefined;
+  const ba: any = (userProfile as any).bankAccount;
+  if (ba) {
+    serializedBankAccount = {
+      bank: ba.bank,
+      bankName: ba.bankName,
+      agency: ba.agency,
+      account: ba.account,
+      accountDigit: ba.accountDigit,
+      accountType: ba.accountType,
+      holderName: ba.holderName,
+      holderDocument: ba.holderDocument,
+      verified: ba.verified,
+      createdAt: ba.createdAt?.toDate ? ba.createdAt.toDate().toISOString() : (typeof ba.createdAt === 'string' ? ba.createdAt : new Date().toISOString()),
+      updatedAt: ba.updatedAt?.toDate ? ba.updatedAt.toDate().toISOString() : (typeof ba.updatedAt === 'string' ? ba.updatedAt : new Date().toISOString()),
+    };
+  }
+
   // Converter apenas os campos essenciais do userProfile
   const serialized = {
     uid: userProfile.uid,
@@ -53,6 +72,7 @@ const convertTimestampsToISO = (userProfile: UserProfile): SerializedUserProfile
     updatedAt: userProfile.updatedAt?.toDate ? userProfile.updatedAt.toDate().toISOString() : (typeof userProfile.updatedAt === 'string' ? userProfile.updatedAt : new Date().toISOString()),
     planExpiresAt: (userProfile as any).planExpiresAt?.toDate ? (userProfile as any).planExpiresAt.toDate().toISOString() : ((userProfile as any).planExpiresAt || undefined),
     recipient: serializedRecipient,
+    bankAccount: serializedBankAccount,
   } as SerializedUserProfile;
 
   return serialized;
@@ -137,14 +157,14 @@ export const useAuthListener = () => {
           try {
             await AuthService.syncEmailWithFirestore();
           } catch (syncError) {
-            console.error('useAuth -> erro na sincronização de email:', syncError);
+            console.error('Erro ao sincronizar email:', syncError);
           }
 
         } catch (error) {
-          console.error('Erro ao iniciar listener do perfil:', error);
+          console.error('Erro ao carregar perfil do usuário:', error);
+          dispatch(setUserProfile(null));
         }
       } else {
-        console.log('useAuth -> usuário não autenticado, limpando perfil');
         dispatch(setUserProfile(null));
       }
       
@@ -152,14 +172,23 @@ export const useAuthListener = () => {
     });
 
     return () => {
-      console.log('useAuth -> cleanup: removendo listeners');
-      if (unsubscribeProfile) unsubscribeProfile();
       unsubscribeAuth();
+      if (unsubscribeProfile) {
+        unsubscribeProfile();
+      }
     };
   }, [dispatch]);
+
+  return null;
 };
 
-export const useAuthWithPresence = () => {
-  useAuthListener();
+export const useAuth = () => {
+  const dispatch = useAppDispatch();
   usePresence();
+  
+  useEffect(() => {
+    dispatch(setLoading(true));
+  }, [dispatch]);
+
+  return null;
 };
