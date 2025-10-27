@@ -580,7 +580,14 @@ const DetalheProjetoFreelancer = () => {
               disabled={isFinishing || deliveryPercentage < minNextPercentage}
               className="bg-green-600 hover:bg-green-700"
             >
-              {isFinishing ? "Enviando..." : `Enviar Entrega de ${deliveryPercentage}%`}
+              {isFinishing ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
+                  Enviando...
+                </>
+              ) : (
+                `Enviar Entrega de ${deliveryPercentage}%`
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

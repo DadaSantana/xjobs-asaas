@@ -89,6 +89,7 @@ const DetalheProjeto = () => {
   } | null>(null);
   const [projectPayment, setProjectPayment] = useState<any | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [acceptingDeliveryId, setAcceptingDeliveryId] = useState<string | null>(null);
 
   useEffect(() => {
     if (projectId && userProfile) {
@@ -645,18 +646,38 @@ const DetalheProjeto = () => {
                       <Button
                         size="sm"
                         className="flex-1 bg-green-600 hover:bg-green-700"
+                        disabled={acceptingDeliveryId === delivery.id}
                         onClick={async () => {
-                          if (!project || !userProfile || !acceptedProposal) return;
+                          if (!project || !userProfile || !acceptedProposal) {
+                            console.log('[AcceptDelivery] Dados faltando:', { 
+                              hasProject: !!project, 
+                              hasUserProfile: !!userProfile, 
+                              hasProposal: !!acceptedProposal 
+                            });
+                            return;
+                          }
+                          
+                          console.log('[AcceptDelivery] Iniciando aceite da entrega:', delivery.id);
+                          setAcceptingDeliveryId(delivery.id);
                           
                           try {
                             // Aceitar a entrega
+                            console.log('[AcceptDelivery] Aceitando entrega no ProjectService...');
                             await ProjectService.acceptPartialDelivery(project.id, delivery.id);
+                            console.log('[AcceptDelivery] Entrega aceita com sucesso');
                             
                             // Liberar o valor proporcional
+                            console.log('[AcceptDelivery] Buscando dados de pagamento...');
                             const payment = await FundsService.getProjectPayment(project.id);
                             const fundStatus = await FundsService.getProjectFundStatus(project.id);
                             
+                            console.log('[AcceptDelivery] Dados obtidos:', { 
+                              hasPayment: !!payment, 
+                              hasFundStatus: !!fundStatus 
+                            });
+                            
                             if (payment && fundStatus) {
+                              console.log('[AcceptDelivery] Liberando fundos...');
                               await FundsService.requestFundRelease(
                                 {
                                   projectId: project.id,
@@ -672,6 +693,7 @@ const DetalheProjeto = () => {
                                 project.title,
                                 fundStatus.projectValue
                               );
+                              console.log('[AcceptDelivery] Fundos liberados com sucesso');
                             }
 
                             toast({
@@ -680,19 +702,32 @@ const DetalheProjeto = () => {
                             });
 
                             // Recarregar dados
+                            console.log('[AcceptDelivery] Recarregando dados do projeto...');
                             await loadProjectDetails();
+                            console.log('[AcceptDelivery] Processo concluído com sucesso');
                           } catch (error) {
-                            console.error('Erro ao aceitar entrega:', error);
+                            console.error('[AcceptDelivery] Erro ao aceitar entrega:', error);
                             toast({
                               title: 'Erro',
-                              description: 'Erro ao aceitar entrega',
+                              description: error instanceof Error ? error.message : 'Erro ao aceitar entrega',
                               variant: 'destructive',
                             });
+                          } finally {
+                            setAcceptingDeliveryId(null);
                           }
                         }}
                       >
-                        <CheckCircle className="h-4 w-4 mr-1" />
-                        Aceitar e Liberar
+                        {acceptingDeliveryId === delivery.id ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-1" />
+                            Processando...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle className="h-4 w-4 mr-1" />
+                            Aceitar e Liberar
+                          </>
+                        )}
                       </Button>
                     </div>
                   </Card>
