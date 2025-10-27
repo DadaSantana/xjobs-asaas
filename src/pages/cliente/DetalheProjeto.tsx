@@ -587,6 +587,159 @@ const DetalheProjeto = () => {
             </Card>
           )}
 
+          {/* Entregas Parciais Pendentes */}
+          {project.partialDeliveries && project.partialDeliveries.filter(d => d.status === 'aguardando_aceite').length > 0 && (
+            <Card className="p-6 border-orange-200 bg-orange-50">
+              <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-orange-600" />
+                Entregas Aguardando sua Revisão
+              </h3>
+              
+              <div className="space-y-3">
+                {project.partialDeliveries.filter(d => d.status === 'aguardando_aceite').map((delivery) => (
+                  <Card key={delivery.id} className="p-4 bg-white">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xl font-bold text-orange-600">{delivery.percentage}%</span>
+                          <Badge variant="secondary" className="bg-orange-100 text-orange-800">
+                            Aguardando Aceite
+                          </Badge>
+                        </div>
+                        {delivery.description && (
+                          <p className="text-sm text-gray-700 mt-2">{delivery.description}</p>
+                        )}
+                        <p className="text-xs text-gray-500 mt-1">
+                          Entregue em:{' '}
+                          {format(
+                            delivery.deliveredAt?.toDate
+                              ? delivery.deliveredAt.toDate()
+                              : new Date(delivery.deliveredAt),
+                            "dd/MM/yyyy 'às' HH:mm",
+                            { locale: ptBR }
+                          )}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm text-gray-600">Valor</div>
+                        <div className="text-lg font-bold text-green-600">
+                          {acceptedProposal && formatCurrency((acceptedProposal.proposedBudget * delivery.percentage) / 100)}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-2 mt-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => {
+                          toast({
+                            title: 'Em breve',
+                            description: 'Funcionalidade de rejeição em desenvolvimento',
+                          });
+                        }}
+                      >
+                        Solicitar Ajustes
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="flex-1 bg-green-600 hover:bg-green-700"
+                        onClick={async () => {
+                          if (!project || !userProfile || !acceptedProposal) return;
+                          
+                          try {
+                            // Aceitar a entrega
+                            await ProjectService.acceptPartialDelivery(project.id, delivery.id);
+                            
+                            // Liberar o valor proporcional
+                            const payment = await FundsService.getProjectPayment(project.id);
+                            const fundStatus = await FundsService.getProjectFundStatus(project.id);
+                            
+                            if (payment && fundStatus) {
+                              await FundsService.requestFundRelease(
+                                {
+                                  projectId: project.id,
+                                  chatId: '',
+                                  releaseType: 'partial',
+                                  percentage: delivery.percentage,
+                                  reason: `Aceite de entrega parcial de ${delivery.percentage}%`,
+                                },
+                                project.clientId,
+                                userProfile.name || 'Cliente',
+                                payment.freelancerId,
+                                acceptedProposal.freelancerName,
+                                project.title,
+                                fundStatus.projectValue
+                              );
+                            }
+
+                            toast({
+                              title: 'Entrega aceita!',
+                              description: `Entrega de ${delivery.percentage}% aceita e valor liberado.`,
+                            });
+
+                            // Recarregar dados
+                            await loadProjectDetails();
+                          } catch (error) {
+                            console.error('Erro ao aceitar entrega:', error);
+                            toast({
+                              title: 'Erro',
+                              description: 'Erro ao aceitar entrega',
+                              variant: 'destructive',
+                            });
+                          }
+                        }}
+                      >
+                        <CheckCircle className="h-4 w-4 mr-1" />
+                        Aceitar e Liberar
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* Histórico de Entregas Aceitas */}
+          {project.partialDeliveries && project.partialDeliveries.filter(d => d.status === 'aceita').length > 0 && (
+            <Card className="p-6">
+              <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-green-600" />
+                Entregas Aceitas
+              </h3>
+              
+              <div className="space-y-2">
+                {project.partialDeliveries.filter(d => d.status === 'aceita').map((delivery) => (
+                  <div key={delivery.id} className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
+                    <div className="flex items-center gap-3">
+                      <CheckCircle className="h-5 w-5 text-green-600" />
+                      <div>
+                        <div className="font-semibold">{delivery.percentage}%</div>
+                        {delivery.description && (
+                          <p className="text-xs text-gray-600">{delivery.description}</p>
+                        )}
+                        <p className="text-xs text-gray-500">
+                          Aceita em:{' '}
+                          {delivery.acceptedAt && format(
+                            delivery.acceptedAt?.toDate
+                              ? delivery.acceptedAt.toDate()
+                              : new Date(delivery.acceptedAt),
+                            "dd/MM/yyyy",
+                            { locale: ptBR }
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="font-semibold text-green-600">
+                      {acceptedProposal && formatCurrency((acceptedProposal.proposedBudget * delivery.percentage) / 100)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           {/* Projeto Aguardando Aceite */}
           {project.status === 'aguardando_aceite_cliente' && (
             <Card className="p-6 border-blue-200 bg-blue-50">

@@ -15,6 +15,7 @@ import {
   User,
   FileText,
   AlertCircle,
+  Package,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -24,6 +25,9 @@ import { ProjectService } from "@/services/projectService";
 import { Project } from "@/types/project";
 import { stripHtml } from "@/lib/utils";
 import { getProjectStatusColor, getProjectStatusLabel } from "@/utils/projectHelpers";
+import { Slider } from "@/components/ui/slider";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,6 +49,8 @@ const DetalheProjetoFreelancer = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showFinishDialog, setShowFinishDialog] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
+  const [deliveryPercentage, setDeliveryPercentage] = useState(10);
+  const [deliveryDescription, setDeliveryDescription] = useState("");
 
   useEffect(() => {
     loadProject();
@@ -78,23 +84,45 @@ const DetalheProjetoFreelancer = () => {
 
     setIsFinishing(true);
     try {
-      // Atualizar status do projeto para aguardando_aceite_cliente
-      await ProjectService.updateProjectStatus(project.id, 'aguardando_aceite_cliente');
+      // Criar entrega parcial
+      const newDelivery = {
+        id: `delivery_${Date.now()}`,
+        percentage: deliveryPercentage,
+        description: deliveryDescription.trim() || undefined,
+        deliveredAt: new Date(),
+        status: 'aguardando_aceite' as const,
+      };
+
+      const currentDeliveries = project.partialDeliveries || [];
+      const updatedDeliveries = [...currentDeliveries, newDelivery];
+
+      // Atualizar projeto com nova entrega
+      await ProjectService.addPartialDelivery(project.id, newDelivery);
+
+      // Se for entrega de 100% (total ou somando entregas anteriores), mudar status
+      const totalDelivered = currentDeliveries
+        .filter(d => d.status === 'aceita')
+        .reduce((sum, d) => sum + d.percentage, 0);
+      
+      if (totalDelivered + deliveryPercentage >= 100) {
+        await ProjectService.updateProjectStatus(project.id, 'aguardando_aceite_cliente');
+      }
 
       toast({
-        title: "Projeto finalizado!",
-        description: "O cliente será notificado para aceitar a conclusão do projeto.",
+        title: "Entrega enviada!",
+        description: `Entrega de ${deliveryPercentage}% enviada. O cliente será notificado.`,
       });
 
       setShowFinishDialog(false);
+      setDeliveryDescription("");
       
       // Recarregar projeto
       await loadProject();
     } catch (error) {
-      console.error("Erro ao finalizar projeto:", error);
+      console.error("Erro ao enviar entrega:", error);
       toast({
         title: "Erro",
-        description: "Erro ao finalizar projeto. Tente novamente.",
+        description: "Erro ao enviar entrega. Tente novamente.",
         variant: "destructive",
       });
     } finally {
@@ -128,6 +156,28 @@ const DetalheProjetoFreelancer = () => {
 
   // Verificar se sou o freelancer selecionado
   const isSelectedFreelancer = project.selectedFreelancerId === userProfile?.uid;
+
+  // Calcular porcentagem já entregue e aceita
+  const deliveredPercentage = (project.partialDeliveries || [])
+    .filter(d => d.status === 'aceita')
+    .reduce((sum, d) => sum + d.percentage, 0);
+
+  // Calcular porcentagem pendente de aceite
+  const pendingPercentage = (project.partialDeliveries || [])
+    .filter(d => d.status === 'aguardando_aceite')
+    .reduce((sum, d) => sum + d.percentage, 0);
+
+  // Porcentagem restante para entregar
+  const remainingPercentage = 100 - deliveredPercentage - pendingPercentage;
+
+  // Porcentagem mínima para próxima entrega (deve ser pelo menos 10% maior que já entregue)
+  const minNextPercentage = Math.min(deliveredPercentage + 10, 100);
+
+  // Ao abrir o dialog, definir porcentagem inicial
+  const handleOpenDialog = () => {
+    setDeliveryPercentage(minNextPercentage);
+    setShowFinishDialog(true);
+  };
 
   return (
     <div className="space-y-6">
@@ -270,6 +320,118 @@ const DetalheProjetoFreelancer = () => {
         </CardContent>
       </Card>
 
+      {/* Histórico de Entregas Parciais */}
+      {isSelectedFreelancer && project.partialDeliveries && project.partialDeliveries.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              Histórico de Entregas
+            </CardTitle>
+            <CardDescription>Acompanhe suas entregas parciais e o status de cada uma</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {project.partialDeliveries.map((delivery) => (
+                <div
+                  key={delivery.id}
+                  className={`p-4 rounded-lg border ${
+                    delivery.status === 'aceita'
+                      ? 'bg-green-50 border-green-200'
+                      : delivery.status === 'aguardando_aceite'
+                      ? 'bg-yellow-50 border-yellow-200'
+                      : 'bg-red-50 border-red-200'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-lg">{delivery.percentage}%</span>
+                        <Badge
+                          variant={
+                            delivery.status === 'aceita'
+                              ? 'default'
+                              : delivery.status === 'aguardando_aceite'
+                              ? 'secondary'
+                              : 'destructive'
+                          }
+                          className={
+                            delivery.status === 'aceita'
+                              ? 'bg-green-600'
+                              : delivery.status === 'aguardando_aceite'
+                              ? 'bg-yellow-600'
+                              : ''
+                          }
+                        >
+                          {delivery.status === 'aceita'
+                            ? 'Aceita'
+                            : delivery.status === 'aguardando_aceite'
+                            ? 'Aguardando Aceite'
+                            : 'Rejeitada'}
+                        </Badge>
+                      </div>
+                      {delivery.description && (
+                        <p className="text-sm text-gray-700 mb-2">{delivery.description}</p>
+                      )}
+                      <div className="text-xs text-gray-600">
+                        Entregue em:{' '}
+                        {format(
+                          delivery.deliveredAt?.toDate
+                            ? delivery.deliveredAt.toDate()
+                            : new Date(delivery.deliveredAt),
+                          "dd/MM/yyyy 'às' HH:mm",
+                          { locale: ptBR }
+                        )}
+                      </div>
+                      {delivery.acceptedAt && (
+                        <div className="text-xs text-gray-600">
+                          Aceita em:{' '}
+                          {format(
+                            delivery.acceptedAt?.toDate
+                              ? delivery.acceptedAt.toDate()
+                              : new Date(delivery.acceptedAt),
+                            "dd/MM/yyyy 'às' HH:mm",
+                            { locale: ptBR }
+                          )}
+                        </div>
+                      )}
+                      {delivery.rejectionReason && (
+                        <div className="text-xs text-red-600 mt-1">
+                          Motivo: {delivery.rejectionReason}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right ml-4">
+                      <div className="text-sm text-gray-600">Valor</div>
+                      <div className="font-bold text-lg">
+                        {formatCurrency((proposedValue * delivery.percentage) / 100)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Resumo */}
+            <Separator className="my-4" />
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <div className="text-xs text-gray-600">Entregue</div>
+                <div className="text-xl font-bold text-green-600">{deliveredPercentage}%</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-600">Pendente</div>
+                <div className="text-xl font-bold text-yellow-600">{pendingPercentage}%</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-600">Restante</div>
+                <div className="text-xl font-bold text-gray-600">{remainingPercentage}%</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Ações do Projeto */}
       {isSelectedFreelancer && (
         <Card>
@@ -322,13 +484,13 @@ const DetalheProjetoFreelancer = () => {
                 Chat com Cliente
               </Button>
 
-              {project.status === 'executando' && (
+              {project.status === 'executando' && remainingPercentage > 0 && (
                 <Button
                   className="flex-1 bg-green-600 hover:bg-green-700"
-                  onClick={() => setShowFinishDialog(true)}
+                  onClick={handleOpenDialog}
                 >
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  Finalizar Projeto
+                  <Package className="h-4 w-4 mr-2" />
+                  Enviar Entrega
                 </Button>
               )}
             </div>
@@ -336,26 +498,89 @@ const DetalheProjetoFreelancer = () => {
         </Card>
       )}
 
-      {/* Dialog de Confirmação */}
+      {/* Dialog de Entrega Parcial */}
       <AlertDialog open={showFinishDialog} onOpenChange={setShowFinishDialog}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-w-lg">
           <AlertDialogHeader>
-            <AlertDialogTitle>Finalizar Projeto?</AlertDialogTitle>
+            <AlertDialogTitle>Enviar Entrega Parcial</AlertDialogTitle>
             <AlertDialogDescription>
-              Ao finalizar, o projeto será marcado como concluído e o cliente será notificado para
-              aceitar a conclusão. Após o aceite, o pagamento será liberado para sua carteira.
-              <br /><br />
-              <strong>Confirma que o projeto está completo e pronto para entrega?</strong>
+              Configure a porcentagem de entrega e adicione uma descrição (opcional). O cliente será
+              notificado e poderá aceitar, liberando o valor proporcional.
             </AlertDialogDescription>
           </AlertDialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Progresso Atual */}
+            <div className="bg-gray-50 p-3 rounded-lg space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Já entregue e aceito:</span>
+                <span className="font-semibold text-green-600">{deliveredPercentage}%</span>
+              </div>
+              {pendingPercentage > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Aguardando aceite:</span>
+                  <span className="font-semibold text-yellow-600">{pendingPercentage}%</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Restante para entregar:</span>
+                <span className="font-semibold text-gray-900">{remainingPercentage}%</span>
+              </div>
+            </div>
+
+            {/* Seletor de Porcentagem */}
+            <div className="space-y-2">
+              <Label>Porcentagem desta entrega: {deliveryPercentage}%</Label>
+              <Slider
+                value={[deliveryPercentage]}
+                onValueChange={([value]) => setDeliveryPercentage(value)}
+                min={minNextPercentage}
+                max={Math.min(remainingPercentage + deliveredPercentage, 100)}
+                step={10}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>Mínimo: {minNextPercentage}%</span>
+                <span>Máximo: {Math.min(remainingPercentage + deliveredPercentage, 100)}%</span>
+              </div>
+            </div>
+
+            {/* Valor da Entrega */}
+            <div className="bg-blue-50 p-3 rounded-lg">
+              <div className="text-sm text-gray-600 mb-1">Valor desta entrega:</div>
+              <div className="text-2xl font-bold text-blue-600">
+                {formatCurrency((proposedValue * deliveryPercentage) / 100)}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                {deliveryPercentage}% de {formatCurrency(proposedValue)}
+              </div>
+            </div>
+
+            {/* Descrição da Entrega */}
+            <div className="space-y-2">
+              <Label htmlFor="delivery-description">Descrição da entrega (opcional)</Label>
+              <Textarea
+                id="delivery-description"
+                placeholder="Ex: Implementação das telas de login e cadastro..."
+                value={deliveryDescription}
+                onChange={(e) => setDeliveryDescription(e.target.value)}
+                rows={3}
+                maxLength={500}
+              />
+              <div className="text-xs text-gray-500 text-right">
+                {deliveryDescription.length}/500 caracteres
+              </div>
+            </div>
+          </div>
+
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isFinishing}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleFinishProject}
-              disabled={isFinishing}
+              disabled={isFinishing || deliveryPercentage < minNextPercentage}
               className="bg-green-600 hover:bg-green-700"
             >
-              {isFinishing ? "Finalizando..." : "Sim, Finalizar Projeto"}
+              {isFinishing ? "Enviando..." : `Enviar Entrega de ${deliveryPercentage}%`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

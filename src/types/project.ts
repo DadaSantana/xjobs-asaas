@@ -39,6 +39,17 @@ export interface ProjectLike {
   freelancerPortfolioUrl?: string;
 }
 
+// Interface para entregas parciais
+export interface PartialDelivery {
+  id: string;
+  percentage: number; // Porcentagem desta entrega (10%, 20%, etc.)
+  description?: string; // Descrição da entrega (opcional)
+  deliveredAt: Timestamp; // Data que o freelancer finalizou
+  acceptedAt?: Timestamp; // Data que o cliente aceitou
+  status: 'aguardando_aceite' | 'aceita' | 'rejeitada';
+  rejectionReason?: string; // Motivo da rejeição (se aplicável)
+}
+
 export interface Project {
   id: string;
   title: string;
@@ -69,6 +80,10 @@ export interface Project {
   likes: ProjectLike[]; // Array de curtidas/propostas
   likesCount: number; // Contador de curtidas (máximo 80)
   maxLikes: number; // Limite de curtidas por projeto (padrão 80)
+  
+  // Sistema de entregas parciais
+  partialDeliveries?: PartialDelivery[]; // Array de entregas parciais
+  totalDeliveredPercentage?: number; // Porcentagem total já entregue e aceita
 }
 
 export interface ProjectProposal {

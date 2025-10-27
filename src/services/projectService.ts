@@ -684,4 +684,143 @@ export class ProjectService {
       throw error;
     }
   }
+
+  // Adicionar entrega parcial ao projeto
+  static async addPartialDelivery(projectId: string, delivery: any): Promise<void> {
+    try {
+      const projectRef = doc(db, 'projects', projectId);
+      const projectDoc = await getDoc(projectRef);
+      
+      if (!projectDoc.exists()) {
+        throw new Error('Projeto não encontrado');
+      }
+
+      const projectData = projectDoc.data();
+      
+      // Adicionar entrega ao array
+      await updateDoc(projectRef, {
+        partialDeliveries: arrayUnion({
+          ...delivery,
+          deliveredAt: Timestamp.fromDate(delivery.deliveredAt)
+        }),
+        updatedAt: Timestamp.now()
+      });
+
+      // Criar notificação para o cliente
+      try {
+        await NotificationService.createNotification({
+          userId: projectData.clientId,
+          type: 'delivery_submitted',
+          title: 'Nova entrega recebida',
+          message: `O freelancer enviou uma entrega de ${delivery.percentage}% do projeto "${projectData.title}".`,
+          actionUrl: `/cliente/projetos/${projectId}`,
+          actionLabel: 'Revisar entrega'
+        });
+      } catch (notificationError) {
+        console.error('Erro ao criar notificação de entrega:', notificationError);
+      }
+
+      // Criar log de sistema
+      try {
+        await addDoc(collection(db, 'logs'), {
+          type: 'delivery_submitted',
+          level: 'info',
+          title: 'Entrega parcial enviada',
+          message: `Freelancer enviou entrega de ${delivery.percentage}% do projeto "${projectData.title}".`,
+          timestamp: Timestamp.now(),
+          source: 'projectService.addPartialDelivery',
+          projectId: projectId,
+          deliveryId: delivery.id,
+          percentage: delivery.percentage,
+          read: false
+        });
+      } catch (logError) {
+        console.error('Erro ao criar log de entrega:', logError);
+      }
+    } catch (error) {
+      console.error('Erro ao adicionar entrega parcial:', error);
+      throw error;
+    }
+  }
+
+  // Aceitar entrega parcial
+  static async acceptPartialDelivery(projectId: string, deliveryId: string): Promise<void> {
+    try {
+      const projectRef = doc(db, 'projects', projectId);
+      const projectDoc = await getDoc(projectRef);
+      
+      if (!projectDoc.exists()) {
+        throw new Error('Projeto não encontrado');
+      }
+
+      const projectData = projectDoc.data();
+      const deliveries = projectData.partialDeliveries || [];
+      
+      // Atualizar status da entrega
+      const updatedDeliveries = deliveries.map((d: any) => {
+        if (d.id === deliveryId) {
+          return {
+            ...d,
+            status: 'aceita',
+            acceptedAt: Timestamp.now()
+          };
+        }
+        return d;
+      });
+
+      // Calcular porcentagem total aceita
+      const totalAccepted = updatedDeliveries
+        .filter((d: any) => d.status === 'aceita')
+        .reduce((sum: number, d: any) => sum + d.percentage, 0);
+
+      await updateDoc(projectRef, {
+        partialDeliveries: updatedDeliveries,
+        totalDeliveredPercentage: totalAccepted,
+        updatedAt: Timestamp.now()
+      });
+
+      // Se 100% foi aceito, marcar projeto como concluído
+      if (totalAccepted >= 100) {
+        await this.updateProjectStatus(projectId, 'concluido');
+      }
+
+      // Criar notificação para o freelancer
+      const delivery = deliveries.find((d: any) => d.id === deliveryId);
+      if (delivery && projectData.selectedFreelancerId) {
+        try {
+          await NotificationService.createNotification({
+            userId: projectData.selectedFreelancerId,
+            type: 'delivery_accepted',
+            title: 'Entrega aceita',
+            message: `O cliente aceitou sua entrega de ${delivery.percentage}% do projeto "${projectData.title}".`,
+            actionUrl: `/freelancer/projetos/${projectId}`,
+            actionLabel: 'Ver projeto'
+          });
+        } catch (notificationError) {
+          console.error('Erro ao criar notificação de aceite:', notificationError);
+        }
+      }
+
+      // Criar log de sistema
+      try {
+        await addDoc(collection(db, 'logs'), {
+          type: 'delivery_accepted',
+          level: 'info',
+          title: 'Entrega parcial aceita',
+          message: `Cliente aceitou entrega de ${delivery?.percentage}% do projeto "${projectData.title}".`,
+          timestamp: Timestamp.now(),
+          source: 'projectService.acceptPartialDelivery',
+          projectId: projectId,
+          deliveryId: deliveryId,
+          percentage: delivery?.percentage,
+          read: false
+        });
+      } catch (logError) {
+        console.error('Erro ao criar log de aceite:', logError);
+      }
+    } catch (error) {
+      console.error('Erro ao aceitar entrega parcial:', error);
+      throw error;
+    }
+  }
 }
