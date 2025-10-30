@@ -1090,6 +1090,11 @@ const DetalheProjeto = () => {
                   console.log('[DetalheProjeto] confirm:post-refresh', { fs2, pay2 });
                   setFundStatus(fs2);
                   setProjectPayment(pay2);
+                  // Atualizar releasedPctRef com o novo valor liberado
+                  if (fs2) {
+                    releasedPctRef.current = Math.min(100, Math.max(0, Math.round((fs2.releasedPercentage || 0) / 10) * 10));
+                    console.log('[DetalheProjeto] confirm:updated-releasedPctRef', { releasedPct: releasedPctRef.current });
+                  }
                   if (!fs2 || fs2.remainingAmount == null) {
                     console.warn('[DetalheProjeto] fund status veio nulo; forçando leitura direta do payment');
                   }
