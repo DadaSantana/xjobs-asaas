@@ -52,6 +52,19 @@ export {
   listAsaasPlans
 } from './asaasPlansManagement';
 
+// Funções do sistema de adiantamento
+export {
+  processAdvanceRequest,
+  listAdvanceRequests,
+  approveAdvanceRequest,
+  rejectAdvanceRequest
+} from './advanceService';
+
+// Funções do sistema de saque Asaas
+export {
+  processWithdrawalAsaas
+} from './withdrawalService';
+
 export {
   createRecipient,
   checkRecipient,

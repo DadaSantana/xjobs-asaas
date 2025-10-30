@@ -239,14 +239,17 @@ const MinhasFinancas = () => {
                 <div className="text-xs md:text-sm text-gray-600">Saldo Disponível</div>
                 <div className="text-xs text-gray-500 mb-1">Disponível para saque</div>
                 <div className="text-lg md:text-2xl font-bold text-green-700">{formatCurrency(summary.availableBalance)}</div>
+                <div className="text-xs text-gray-500 mt-1">
+                  Taxa PIX: R$ 2,00 por transação
+                </div>
                 <Button
                   size="sm"
                   className="mt-2 md:mt-3 text-xs"
                   onClick={async () => {
                     try {
                       if (!userProfile?.uid) return;
-                      if (!summary || summary.availableBalance <= 0) {
-                        toast({ title: 'Sem saldo', description: 'Não há saldo disponível para saque', variant: 'destructive' });
+                      if (!summary || summary.availableBalance <= 2.00) {
+                        toast({ title: 'Saldo insuficiente', description: 'É necessário pelo menos R$ 2,00 para cobrir a taxa do PIX', variant: 'destructive' });
                         return;
                       }
                       
@@ -260,6 +263,14 @@ const MinhasFinancas = () => {
                         return;
                       }
                       
+                      // Confirmar saque com aviso sobre a taxa
+                      const netAmount = summary.availableBalance - 2.00;
+                      const confirmMessage = `Você receberá R$ ${netAmount.toFixed(2)} (R$ ${summary.availableBalance.toFixed(2)} - R$ 2,00 de taxa PIX). Confirmar saque?`;
+                      
+                      if (!window.confirm(confirmMessage)) {
+                        return;
+                      }
+                      
                       // Saque do valor total disponível
                       const token = await (await import('@/lib/firebase')).auth.currentUser?.getIdToken();
                       if (!token) {
@@ -267,9 +278,9 @@ const MinhasFinancas = () => {
                         return;
                       }
                       
-                      toast({ title: 'Processando...', description: 'Solicitando transferência ao Pagar.me' });
+                      toast({ title: 'Processando...', description: 'Solicitando transferência via PIX (Asaas). Taxa de R$ 2,00 será descontada.' });
                       
-                      const response = await fetch('https://us-central1-xjobs-a43d2.cloudfunctions.net/requestWithdrawNow', {
+                      const response = await fetch('https://processwithdrawalasaas-bo5fg4zxxq-uc.a.run.app', {
                         method: 'POST',
                         headers: {
                           'Content-Type': 'application/json',
@@ -436,12 +447,8 @@ const MinhasFinancas = () => {
                       toast({ title: 'Valor inválido', description: 'Verifique o saldo disponível', variant: 'destructive' });
                       return;
                     }
-                    await FundsService.requestWithdrawal({
-                      freelancerId: userProfile.uid,
-                      freelancerName: userProfile.name,
-                      amount
-                    });
-                    toast({ title: 'Solicitado', description: 'Seu saque foi agendado.' });
+                    await processWithdrawalAsaas(amount);
+                    toast({ title: 'Saque Processado', description: 'Seu saque foi enviado via PIX e será processado em até 1 hora.' });
                     setWithdrawValue('');
                     const [sum, txs] = await Promise.all([
                       FundsService.getFreelancerBalance(userProfile.uid),

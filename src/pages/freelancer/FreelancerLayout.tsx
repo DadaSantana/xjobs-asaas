@@ -12,6 +12,8 @@ import MeusPlanos from './MeusPlanos';
 import Suporte from './Suporte';
 import Mensagens from './Mensagens';
 import MeuPerfil from './MeuPerfil';
+import AdvanceManagement from './AdvanceManagement';
+import AdvanceHistory from './AdvanceHistory';
 import { useAppSelector } from '@/hooks/redux';
 import Avaliar from '../Avaliar';
 import DetalheProjetoFreelancer from './DetalheProjeto';
@@ -76,6 +78,8 @@ const FreelancerLayout = () => {
                   <Route path="/avaliar" element={<Avaliar />} />
                   <Route path="/mensagens" element={<Mensagens />} />
                   <Route path="/minhas-financas" element={<MinhasFinancas />} />
+                  <Route path="/adiantamentos" element={<AdvanceManagement />} />
+                  <Route path="/historico-adiantamentos" element={<AdvanceHistory />} />
                   <Route path="/meus-planos" element={<MeusPlanos />} />
                   <Route path="/meu-perfil" element={<MeuPerfil />} />
                   <Route path="/suporte" element={<Suporte />} />

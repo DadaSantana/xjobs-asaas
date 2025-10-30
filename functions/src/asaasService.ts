@@ -79,7 +79,7 @@ export interface AsaasPaymentResponse extends AsaasPayment {
 
 export interface AsaasTransfer {
   value: number;
-  bankAccount: {
+  bankAccount?: {
     bank: {
       code: string; // Código do banco (ex: "001", "237")
     };
@@ -89,11 +89,13 @@ export interface AsaasTransfer {
     agency: string; // Agência
     account: string; // Conta
     accountDigit: string; // Dígito da conta
-    pixAddressKey?: string; // Chave PIX (opcional)
   };
   operationType?: 'PIX' | 'TED' | 'INTERNAL';
+  pixAddressKey?: string; // Chave PIX para transferências PIX
+  pixAddressKeyType?: 'CPF' | 'CNPJ' | 'EMAIL' | 'PHONE' | 'EVP'; // Tipo da chave PIX
   description?: string;
   scheduleDate?: string; // Data agendada (YYYY-MM-DD)
+  externalReference?: string; // Referência externa
 }
 
 export interface AsaasTransferResponse {

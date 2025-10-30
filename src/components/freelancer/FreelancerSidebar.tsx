@@ -202,11 +202,22 @@ export default function FreelancerSidebar({ onRequestRecipientSetup }: Freelance
                             return;
                           }
                           
-                          if (balance.availableBalance <= 0) return;
+                          if (balance.availableBalance <= 2.00) {
+                            alert('Saldo insuficiente. É necessário pelo menos R$ 2,00 para cobrir a taxa do PIX.');
+                            return;
+                          }
+                          
+                          // Confirmar saque com aviso sobre a taxa
+                          const netAmount = balance.availableBalance - 2.00;
+                          const confirmMessage = `Você receberá R$ ${netAmount.toFixed(2)} (R$ ${balance.availableBalance.toFixed(2)} - R$ 2,00 de taxa PIX). Confirmar saque?`;
+                          
+                          if (!window.confirm(confirmMessage)) {
+                            return;
+                          }
                           const { auth } = await import('@/lib/firebase');
                           const token = await auth.currentUser?.getIdToken();
                           if (!token) return;
-                          const resp = await fetch('https://us-central1-xjobs-a43d2.cloudfunctions.net/requestWithdrawNow', {
+                          const resp = await fetch('https://processwithdrawalasaas-bo5fg4zxxq-uc.a.run.app', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                             body: JSON.stringify({ amount: balance.availableBalance })

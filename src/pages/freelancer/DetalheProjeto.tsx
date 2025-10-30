@@ -38,6 +38,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { LikeProjectButton } from "@/components/LikeProjectButton";
 
 const DetalheProjetoFreelancer = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -319,6 +320,110 @@ const DetalheProjetoFreelancer = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Botões de Proposta - Apenas para projetos que estão recebendo propostas */}
+      {project.status === 'recebendo_propostas' && !isSelectedFreelancer && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Enviar Proposta</CardTitle>
+            <CardDescription>
+              Demonstre interesse neste projeto enviando uma proposta com seu valor e mensagem
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col sm:flex-row gap-4 items-start">
+              <div className="flex-1">
+                <p className="text-sm text-gray-600 mb-2">
+                  {myLike ? (
+                    <span className="text-green-600 font-medium">
+                      ✓ Você já enviou uma proposta para este projeto
+                    </span>
+                  ) : (
+                    "Clique no botão abaixo para enviar sua proposta com valor e mensagem personalizada"
+                  )}
+                </p>
+              </div>
+              <div className="flex-shrink-0">
+                <LikeProjectButton
+                  projectId={project.id}
+                  projectTitle={project.title}
+                  currentLikesCount={project.likesCount || 0}
+                  maxLikes={project.maxLikes || 80}
+                  isProjectActive={project.status === 'recebendo_propostas'}
+                  onLikeSuccess={() => {
+                    toast({
+                      title: "Sucesso!",
+                      description: "Proposta enviada com sucesso!",
+                    });
+                    loadProject(); // Recarregar projeto para atualizar dados
+                  }}
+                  onUnlikeSuccess={() => {
+                    toast({
+                      title: "Proposta removida",
+                      description: "Sua proposta foi removida do projeto",
+                    });
+                    loadProject(); // Recarregar projeto para atualizar dados
+                  }}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Informação sobre status do projeto para freelancers não selecionados */}
+      {project.status !== 'recebendo_propostas' && !isSelectedFreelancer && (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            {project.status === 'aguardando_garantia' && (
+              <span>
+                <strong>Projeto não está mais recebendo propostas.</strong>
+                <br />
+                Uma proposta foi aceita e o cliente está processando o pagamento da garantia.
+              </span>
+            )}
+            {project.status === 'executando' && (
+              <span>
+                <strong>Projeto em execução.</strong>
+                <br />
+                Este projeto já foi iniciado por outro freelancer.
+              </span>
+            )}
+            {project.status === 'aguardando_aceite_cliente' && (
+              <span>
+                <strong>Projeto aguardando aceite do cliente.</strong>
+                <br />
+                O freelancer finalizou o trabalho e está aguardando aprovação do cliente.
+              </span>
+            )}
+            {project.status === 'concluido' && (
+              <span>
+                <strong>Projeto concluído.</strong>
+                <br />
+                Este projeto foi finalizado com sucesso.
+              </span>
+            )}
+            {project.status === 'cancelado' && (
+              <span>
+                <strong>Projeto cancelado.</strong>
+                <br />
+                Este projeto foi cancelado pelo cliente.
+              </span>
+            )}
+            {myLike && (
+              <div className="mt-2 p-2 bg-blue-50 rounded border-l-4 border-blue-400">
+                <div className="text-sm">
+                  <strong>Sua proposta:</strong> {formatCurrency(myLike.proposedValue)}
+                  {myLike.message && (
+                    <div className="mt-1 text-gray-600 italic">"{myLike.message}"</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Histórico de Entregas Parciais */}
       {isSelectedFreelancer && project.partialDeliveries && project.partialDeliveries.length > 0 && (
