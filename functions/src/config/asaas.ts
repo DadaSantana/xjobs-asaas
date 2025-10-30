@@ -1,14 +1,35 @@
 /**
  * Configuração da API Asaas
- * Ambiente: Sandbox (Homologação)
+ * Detecta automaticamente entre Sandbox (desenvolvimento) e Produção
  */
 
+// Detectar ambiente
+const isProduction = process.env.NODE_ENV === 'production' || process.env.FUNCTIONS_EMULATOR !== 'true';
+
+// Chaves de API
+const ASAAS_API_KEYS = {
+  sandbox: '$aact_hmlg_000MzkwODA2MWY2OGM3MWRlMDU2NWM3MzJlNzZmNGZhZGY6OjIwMjE5ZWVjLWI3OTUtNDNhYy1hMTIxLTc5MTAzOTUwNjFmMDo6JGFhY2hfYWIzMzc2OGQtZGZhMi00NDIzLTgwYjgtZmY2NjMyMTFlMWZk',
+  production: '$aact_prod_000MzkwODA2MWY2OGM3MWRlMDU2NWM3MzJlNzZmNGZhZGY6OjhiZjI1YWI4LWVjNTctNDY5OS1iYTBiLTBmNGIwODUxYzg4NTo6JGFhY2hfY2YwYWQ0MWItODljNi00NWYxLWJjMWItNDRkMjdkYzAwYThi'
+};
+
+// Wallet IDs
+const ASAAS_WALLET_IDS = {
+  sandbox: null, // Sandbox não precisa de Wallet ID específico
+  production: 'f8a0607e-64dd-4deb-a414-4de740dc42f3'
+};
+
 export const ASAAS_CONFIG = {
-  // Chave de API Sandbox fornecida
-  apiKey: '$aact_hmlg_000MzkwODA2MWY2OGM3MWRlMDU2NWM3MzJlNzZmNGZhZGY6OjIwMjE5ZWVjLWI3OTUtNDNhYy1hMTIxLTc5MTAzOTUwNjFmMDo6JGFhY2hfYWIzMzc2OGQtZGZhMi00NDIzLTgwYjgtZmY2NjMyMTFlMWZk',
+  // Chave de API (seleciona automaticamente baseado no ambiente)
+  apiKey: isProduction ? ASAAS_API_KEYS.production : ASAAS_API_KEYS.sandbox,
   
-  // URL da API Sandbox
-  apiUrl: 'https://api-sandbox.asaas.com/v3',
+  // URL da API (seleciona automaticamente baseado no ambiente)
+  apiUrl: isProduction ? 'https://api.asaas.com/v3' : 'https://api-sandbox.asaas.com/v3',
+  
+  // Wallet ID (apenas para produção)
+  walletId: isProduction ? ASAAS_WALLET_IDS.production : ASAAS_WALLET_IDS.sandbox,
+  
+  // Ambiente atual
+  environment: isProduction ? 'production' : 'sandbox',
   
   // Configurações de pagamento
   payment: {

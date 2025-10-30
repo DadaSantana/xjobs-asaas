@@ -5,6 +5,13 @@
 
 import { ASAAS_CONFIG } from './config/asaas';
 
+// Log do ambiente ao inicializar
+console.log('[Asaas Service] Inicializado em ambiente:', ASAAS_CONFIG.environment);
+console.log('[Asaas Service] API URL:', ASAAS_CONFIG.apiUrl);
+if (ASAAS_CONFIG.walletId) {
+  console.log('[Asaas Service] Wallet ID configurado:', ASAAS_CONFIG.walletId);
+}
+
 // Tipos da API Asaas
 export interface AsaasCustomer {
   id?: string;

@@ -112,6 +112,22 @@ export const createAsaasCheckout = functions.https.onRequest(async (req, res) =>
 
       console.log('[Asaas Checkout] Iniciando criação para projeto:', projectId);
 
+      // VERIFICAR SE O PROJETO EXISTE
+      const projectRef = db.collection('projects').doc(projectId);
+      const projectDoc = await projectRef.get();
+      
+      if (!projectDoc.exists) {
+        console.error('[Asaas Checkout] ERRO: Projeto não encontrado:', projectId);
+        res.status(404).json({ 
+          error: 'Projeto não encontrado',
+          projectId: projectId 
+        });
+        return;
+      }
+
+      const projectData = projectDoc.data();
+      console.log('[Asaas Checkout] Projeto encontrado:', projectData?.title);
+
       // Calcular valor total com taxa de 10%
       const freelancerAmount = Number(amount);
       const totalAmount = freelancerAmount / 0.9; // Se 90% = amount, então 100% = amount/0.9
@@ -182,10 +198,12 @@ export const createAsaasCheckout = functions.https.onRequest(async (req, res) =>
       console.log('[Asaas Checkout] Dados salvos no Firestore');
 
       // 4. Atualizar projeto para aguardando_garantia
-      await db.collection('projects').doc(projectId).update({
+      await projectRef.update({
         status: 'aguardando_garantia',
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
+      
+      console.log('[Asaas Checkout] ✅ Projeto atualizado para aguardando_garantia');
 
       // 5. Retornar resposta
       res.status(200).json({
@@ -546,74 +564,89 @@ async function processExistingPayment(paymentDoc: FirebaseFirestore.DocumentSnap
   confirmedDate?: string;
   [key: string]: unknown 
 }) {
-  const payment = paymentDoc.data();
-  const projectId = payment?.projectId;
+    const payment = paymentDoc.data();
+    const projectId = payment?.projectId;
 
-  if (!projectId) {
-    console.error('[Asaas Webhook] Project ID não encontrado');
-    return;
+    if (!projectId) {
+      console.error('[Asaas Webhook] Project ID não encontrado');
+      return;
+    }
+
+    // Determinar método de pagamento
+    const paymentMethod = paymentData.billingType as string || 'UNDEFINED';
+    
+    // Calcular data de disponibilidade
+    // PIX: Disponível imediatamente
+    // CREDIT_CARD: Disponível após 35 dias
+    const paidDate = paymentData.clientPaymentDate || paymentData.confirmedDate || new Date().toISOString().split('T')[0];
+    const paidTimestamp = admin.firestore.Timestamp.fromDate(new Date(paidDate));
+    
+    const availableDate = new Date(paidDate);
+    if (paymentMethod === 'CREDIT_CARD') {
+      // Cartão de crédito: +35 dias
+      availableDate.setDate(availableDate.getDate() + 35);
+    }
+    // PIX e outros: disponível imediatamente
+    
+    const availableTimestamp = admin.firestore.Timestamp.fromDate(availableDate);
+
+    // Atualizar status do pagamento
+    await paymentDoc.ref.update({
+      paymentStatus: 'paid',
+      escrowStatus: 'held',
+      totalPaid: payment.totalAmount || 0,
+      totalHeld: payment.freelancerAmount || 0, // Apenas 90% fica retido para o freelancer
+      paymentMethod: paymentMethod,
+      paidAt: paidTimestamp,
+      availableAt: availableTimestamp,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log('[Asaas Webhook] Status do pagamento atualizado', {
+      paymentMethod,
+      paidAt: paidDate,
+      availableAt: availableDate.toISOString().split('T')[0],
+    });
+
+    // Criar fundHold
+    const holdData = {
+      projectId: projectId,
+      projectValue: payment.freelancerAmount || 0,
+      totalHeld: payment.freelancerAmount || 0,
+      totalReleased: 0,
+      totalRefunded: 0,
+      availableForRelease: payment.freelancerAmount || 0,
+      isActive: true,
+      releases: [],
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    await db.collection('fundHolds').add(holdData);
+    console.log('[Asaas Webhook] FundHold criado');
+
+    // Atualizar status do projeto para 'executando'
+  try {
+    const projectRef = db.collection('projects').doc(projectId);
+    const projectSnap = await projectRef.get();
+    
+    if (!projectSnap.exists) {
+      console.error('[Asaas Webhook] ERRO: Projeto não existe no Firestore:', projectId);
+      console.error('[Asaas Webhook] O pagamento foi processado mas o projeto não foi atualizado!');
+      return;
+    }
+    
+    await projectRef.update({
+      status: 'executando',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log('[Asaas Webhook] ✅ Projeto atualizado para executando com sucesso');
+  } catch (error) {
+    console.error('[Asaas Webhook] ERRO ao atualizar projeto:', error);
+    console.error('[Asaas Webhook] Project ID:', projectId);
+    throw error; // Re-lançar erro para registro
   }
-
-  // Determinar método de pagamento
-  const paymentMethod = paymentData.billingType as string || 'UNDEFINED';
-  
-  // Calcular data de disponibilidade
-  // PIX: Disponível imediatamente
-  // CREDIT_CARD: Disponível após 35 dias
-  const paidDate = paymentData.clientPaymentDate || paymentData.confirmedDate || new Date().toISOString().split('T')[0];
-  const paidTimestamp = admin.firestore.Timestamp.fromDate(new Date(paidDate));
-  
-  const availableDate = new Date(paidDate);
-  if (paymentMethod === 'CREDIT_CARD') {
-    // Cartão de crédito: +35 dias
-    availableDate.setDate(availableDate.getDate() + 35);
-  }
-  // PIX e outros: disponível imediatamente
-  
-  const availableTimestamp = admin.firestore.Timestamp.fromDate(availableDate);
-
-  // Atualizar status do pagamento
-  await paymentDoc.ref.update({
-    paymentStatus: 'paid',
-    escrowStatus: 'held',
-    totalPaid: payment.totalAmount || 0,
-    totalHeld: payment.freelancerAmount || 0, // Apenas 90% fica retido para o freelancer
-    paymentMethod: paymentMethod,
-    paidAt: paidTimestamp,
-    availableAt: availableTimestamp,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-
-  console.log('[Asaas Webhook] Status do pagamento atualizado', {
-    paymentMethod,
-    paidAt: paidDate,
-    availableAt: availableDate.toISOString().split('T')[0],
-  });
-
-  // Criar fundHold
-  const holdData = {
-    projectId: projectId,
-    projectValue: payment.freelancerAmount || 0,
-    totalHeld: payment.freelancerAmount || 0,
-    totalReleased: 0,
-    totalRefunded: 0,
-    availableForRelease: payment.freelancerAmount || 0,
-    isActive: true,
-    releases: [],
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  };
-
-  await db.collection('fundHolds').add(holdData);
-  console.log('[Asaas Webhook] FundHold criado');
-
-  // Atualizar status do projeto para 'executando'
-  await db.collection('projects').doc(projectId).update({
-    status: 'executando',
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-
-  console.log('[Asaas Webhook] Projeto atualizado para executando');
 }
 
 /**
