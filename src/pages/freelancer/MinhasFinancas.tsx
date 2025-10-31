@@ -6,11 +6,22 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { CheckCircle, AlertCircle, Banknote, CreditCard } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import BankAccountSetupModal from '@/components/BankAccountSetupModal';
 import { useEffect, useMemo, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useAppSelector } from '@/hooks/redux';
 import { FundsService } from '@/services/fundsService';
+import { processWithdrawalAsaas } from '@/services/withdrawalService';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { BankAccount } from '@/types/bankAccount';
@@ -44,6 +55,8 @@ const MinhasFinancas = () => {
   const [withdrawValue, setWithdrawValue] = useState<string>("");
   const [releases, setReleases] = useState<any[]>([]);
   const [pendingReleases, setPendingReleases] = useState<any[]>([]); // Liberações com prazo pendente
+  const [showWithdrawDialog, setShowWithdrawDialog] = useState(false);
+  const [withdrawDialogData, setWithdrawDialogData] = useState<{ amount: number; netAmount: number } | null>(null);
 
   const handleSubmit = async (data: BankAccount) => {
     if (!userProfile?.uid) {
@@ -98,6 +111,95 @@ const MinhasFinancas = () => {
     }
   };
 
+  const handleConfirmWithdraw = async () => {
+    if (!withdrawDialogData || !userProfile?.uid || !summary) return;
+    
+    setShowWithdrawDialog(false);
+    
+    try {
+      // Saque do valor total disponível
+      const token = await (await import('@/lib/firebase')).auth.currentUser?.getIdToken();
+      if (!token) {
+        toast({ title: 'Erro', description: 'Usuário não autenticado', variant: 'destructive' });
+        return;
+      }
+      
+      toast({ title: 'Processando...', description: 'Solicitando transferência via PIX (Asaas). Taxa de R$ 2,00 será descontada.' });
+      
+      const response = await fetch('https://processwithdrawalasaas-bo5fg4zxxq-uc.a.run.app', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ amount: withdrawDialogData.amount })
+      });
+      
+      const text = await response.text();
+      console.log('Resposta do saque:', response.status, text);
+      
+      if (!response.ok) {
+        let data: any = {};
+        try { 
+          data = JSON.parse(text);
+        } catch {}
+        
+        // Mensagens de erro mais amigáveis
+        const errorMessage = data.error || 'Falha ao processar saque';
+        const errorDetails = data.details || data.message || '';
+        
+        console.error('Erro no saque:', data);
+        
+        toast({ 
+          title: 'Erro ao solicitar saque', 
+          description: `${errorMessage}${errorDetails ? ': ' + errorDetails : ''}`,
+          variant: 'destructive' 
+        });
+        return;
+      }
+      
+      let result: any = {};
+      try {
+        result = JSON.parse(text);
+      } catch {}
+      
+      console.log('Resultado do saque:', result);
+      
+      // Verificar o status da transferência
+      if (result.finalStatus === 'completed') {
+        toast({ 
+          title: 'Transferência concluída!', 
+          description: 'O valor foi transferido para sua conta bancária.',
+        });
+      } else if (result.finalStatus === 'pending') {
+        toast({ 
+          title: 'Transferência em processamento', 
+          description: 'A transferência está sendo processada pelo Pagar.me. Você receberá o valor em breve.',
+        });
+      } else {
+        toast({ 
+          title: 'Saque solicitado', 
+          description: result.message || 'Aguarde a confirmação da transferência.',
+        });
+      }
+      
+      // Recarregar saldos e transações
+      const [sum, txs] = await Promise.all([
+        FundsService.getFreelancerBalance(userProfile.uid),
+        FundsService.getFreelancerTransactions(userProfile.uid)
+      ]);
+      setSummary({ ...sum, pendingWithdrawals: sum.pendingWithdrawals || 0 });
+      setTransactions(txs);
+    } catch (e: any) {
+      console.error('Erro no saque imediato:', e);
+      toast({ 
+        title: 'Erro', 
+        description: e?.message || 'Falha ao solicitar saque. Tente novamente.', 
+        variant: 'destructive' 
+      });
+    }
+  };
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
   };
@@ -112,6 +214,13 @@ const MinhasFinancas = () => {
           FundsService.getFreelancerTransactions(userProfile.uid),
           FundsService.getFreelancerReleases(userProfile.uid)
         ]);
+        
+        console.log('[MinhasFinancas] Saldo carregado do frontend:', sum);
+        console.log('[MinhasFinancas] - availableBalance:', sum.availableBalance);
+        console.log('[MinhasFinancas] - pendingBalance:', sum.pendingBalance);
+        console.log('[MinhasFinancas] - totalReleased:', sum.totalReleased);
+        console.log('[MinhasFinancas] - pendingWithdrawals:', sum.pendingWithdrawals);
+        
         setSummary({ ...sum, pendingWithdrawals: sum.pendingWithdrawals || 0, pendingBalance: sum.pendingBalance || 0 });
         setTransactions(txs);
         setReleases(rls);
@@ -265,90 +374,13 @@ const MinhasFinancas = () => {
                       
                       // Confirmar saque com aviso sobre a taxa
                       const netAmount = summary.availableBalance - 2.00;
-                      const confirmMessage = `Você receberá R$ ${netAmount.toFixed(2)} (R$ ${summary.availableBalance.toFixed(2)} - R$ 2,00 de taxa PIX). Confirmar saque?`;
-                      
-                      if (!window.confirm(confirmMessage)) {
-                        return;
-                      }
-                      
-                      // Saque do valor total disponível
-                      const token = await (await import('@/lib/firebase')).auth.currentUser?.getIdToken();
-                      if (!token) {
-                        toast({ title: 'Erro', description: 'Usuário não autenticado', variant: 'destructive' });
-                        return;
-                      }
-                      
-                      toast({ title: 'Processando...', description: 'Solicitando transferência via PIX (Asaas). Taxa de R$ 2,00 será descontada.' });
-                      
-                      const response = await fetch('https://processwithdrawalasaas-bo5fg4zxxq-uc.a.run.app', {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          'Authorization': `Bearer ${token}`,
-                        },
-                        body: JSON.stringify({ amount: summary.availableBalance })
-                      });
-                      
-                      const text = await response.text();
-                      console.log('Resposta do saque:', response.status, text);
-                      
-                      if (!response.ok) {
-                        let data: any = {};
-                        try { 
-                          data = JSON.parse(text);
-                        } catch {}
-                        
-                        // Mensagens de erro mais amigáveis
-                        const errorMessage = data.error || 'Falha ao processar saque';
-                        const errorDetails = data.details || data.message || '';
-                        
-                        console.error('Erro no saque:', data);
-                        
-                        toast({ 
-                          title: 'Erro ao solicitar saque', 
-                          description: `${errorMessage}${errorDetails ? ': ' + errorDetails : ''}`,
-                          variant: 'destructive' 
-                        });
-                        return;
-                      }
-                      
-                      let result: any = {};
-                      try {
-                        result = JSON.parse(text);
-                      } catch {}
-                      
-                      console.log('Resultado do saque:', result);
-                      
-                      // Verificar o status da transferência
-                      if (result.finalStatus === 'completed') {
-                        toast({ 
-                          title: 'Transferência concluída!', 
-                          description: 'O valor foi transferido para sua conta bancária.',
-                        });
-                      } else if (result.finalStatus === 'pending') {
-                        toast({ 
-                          title: 'Transferência em processamento', 
-                          description: 'A transferência está sendo processada pelo Pagar.me. Você receberá o valor em breve.',
-                        });
-                      } else {
-                        toast({ 
-                          title: 'Saque solicitado', 
-                          description: result.message || 'Aguarde a confirmação da transferência.',
-                        });
-                      }
-                      
-                      // Recarregar saldos e transações
-                      const [sum, txs] = await Promise.all([
-                        FundsService.getFreelancerBalance(userProfile.uid),
-                        FundsService.getFreelancerTransactions(userProfile.uid)
-                      ]);
-                      setSummary({ ...sum, pendingWithdrawals: sum.pendingWithdrawals || 0 });
-                      setTransactions(txs);
+                      setWithdrawDialogData({ amount: summary.availableBalance, netAmount });
+                      setShowWithdrawDialog(true);
                     } catch (e:any) {
-                      console.error('Erro no saque imediato:', e);
+                      console.error('Erro ao preparar saque:', e);
                       toast({ 
                         title: 'Erro', 
-                        description: e?.message || 'Falha ao solicitar saque. Tente novamente.', 
+                        description: e?.message || 'Falha ao preparar saque. Tente novamente.', 
                         variant: 'destructive' 
                       });
                     }
@@ -682,6 +714,41 @@ const MinhasFinancas = () => {
         loading={isSubmitting}
         initialData={bankAccountData}
       />
+
+      <AlertDialog open={showWithdrawDialog} onOpenChange={setShowWithdrawDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Saque via PIX</AlertDialogTitle>
+            <AlertDialogDescription>
+              {withdrawDialogData && (
+                <div className="space-y-2 mt-2">
+                  <p>Você está prestes a solicitar um saque do seu saldo disponível.</p>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-1">
+                    <p className="text-sm">
+                      <strong>Valor bruto:</strong> {formatCurrency(withdrawDialogData.amount)}
+                    </p>
+                    <p className="text-sm text-red-600">
+                      <strong>Taxa PIX:</strong> - R$ 2,00
+                    </p>
+                    <p className="text-base font-semibold text-green-700 mt-2 pt-2 border-t border-blue-300">
+                      <strong>Você receberá:</strong> {formatCurrency(withdrawDialogData.netAmount)}
+                    </p>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-3">
+                    O valor será transferido via PIX para sua conta bancária cadastrada.
+                  </p>
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmWithdraw}>
+              Confirmar Saque
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
