@@ -100,12 +100,9 @@ const DetalheProjetoFreelancer = () => {
       // Atualizar projeto com nova entrega
       await ProjectService.addPartialDelivery(project.id, newDelivery);
 
-      // Se for entrega de 100% (total ou somando entregas anteriores), mudar status
-      const totalDelivered = currentDeliveries
-        .filter(d => d.status === 'aceita')
-        .reduce((sum, d) => sum + d.percentage, 0);
-      
-      if (totalDelivered + deliveryPercentage >= 100) {
+      // Se a entrega atual é de 100% (cumulativo), mudar status para aguardando aceite
+      // Como os percentuais são cumulativos, verificamos se a nova entrega é >= 100%
+      if (deliveryPercentage >= 100) {
         await ProjectService.updateProjectStatus(project.id, 'aguardando_aceite_cliente');
       }
 
@@ -159,20 +156,26 @@ const DetalheProjetoFreelancer = () => {
   const isSelectedFreelancer = project.selectedFreelancerId === userProfile?.uid;
 
   // Calcular porcentagem já entregue e aceita
-  const deliveredPercentage = (project.partialDeliveries || [])
-    .filter(d => d.status === 'aceita')
-    .reduce((sum, d) => sum + d.percentage, 0);
+  // Como os percentuais são CUMULATIVOS, pegamos o MAIOR valor aceito
+  const acceptedDeliveries = (project.partialDeliveries || []).filter(d => d.status === 'aceita');
+  const deliveredPercentage = acceptedDeliveries.length > 0
+    ? Math.max(...acceptedDeliveries.map(d => d.percentage))
+    : 0;
 
   // Calcular porcentagem pendente de aceite
-  const pendingPercentage = (project.partialDeliveries || [])
-    .filter(d => d.status === 'aguardando_aceite')
-    .reduce((sum, d) => sum + d.percentage, 0);
+  // Pegamos o MAIOR valor pendente que seja MAIOR que o já aceito
+  const pendingDeliveries = (project.partialDeliveries || []).filter(d => d.status === 'aguardando_aceite');
+  const maxPending = pendingDeliveries.length > 0
+    ? Math.max(...pendingDeliveries.map(d => d.percentage))
+    : 0;
+  const pendingPercentage = Math.max(0, maxPending - deliveredPercentage);
 
   // Porcentagem restante para entregar
-  const remainingPercentage = 100 - deliveredPercentage - pendingPercentage;
+  const totalDelivered = Math.max(deliveredPercentage, maxPending);
+  const remainingPercentage = 100 - totalDelivered;
 
-  // Porcentagem mínima para próxima entrega (deve ser pelo menos 10% maior que já entregue)
-  const minNextPercentage = Math.min(deliveredPercentage + 10, 100);
+  // Porcentagem mínima para próxima entrega (deve ser pelo menos 10% maior que o total já entregue)
+  const minNextPercentage = Math.min(totalDelivered + 10, 100);
 
   // Ao abrir o dialog, definir porcentagem inicial
   const handleOpenDialog = () => {
@@ -437,7 +440,7 @@ const DetalheProjetoFreelancer = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {project.partialDeliveries.map((delivery) => (
+              {project.partialDeliveries.map((delivery, index, allDeliveries) => (
                 <div
                   key={delivery.id}
                   className={`p-4 rounded-lg border ${
@@ -509,7 +512,32 @@ const DetalheProjetoFreelancer = () => {
                     <div className="text-right ml-4">
                       <div className="text-sm text-gray-600">Valor</div>
                       <div className="font-bold text-lg">
-                        {formatCurrency((proposedValue * delivery.percentage) / 100)}
+                        {(() => {
+                          // Ordenar todas as entregas aceitas por data de aceite
+                          const sortedAcceptedDeliveries = allDeliveries
+                            .filter(d => d.status === 'aceita')
+                            .sort((a, b) => {
+                              const dateA = a.acceptedAt?.toDate ? a.acceptedAt.toDate().getTime() : 0;
+                              const dateB = b.acceptedAt?.toDate ? b.acceptedAt.toDate().getTime() : 0;
+                              return dateA - dateB;
+                            });
+                          
+                          // Encontrar o índice da entrega atual nas aceitas
+                          const currentIndexInAccepted = sortedAcceptedDeliveries.findIndex(d => d.id === delivery.id);
+                          
+                          // Se a entrega atual está aceita e não é a primeira, calcular incremental
+                          const previousPercentage = currentIndexInAccepted > 0
+                            ? sortedAcceptedDeliveries[currentIndexInAccepted - 1].percentage
+                            : delivery.status === 'aceita'
+                            ? 0
+                            : (sortedAcceptedDeliveries.length > 0 
+                                ? sortedAcceptedDeliveries[sortedAcceptedDeliveries.length - 1].percentage 
+                                : 0);
+                          
+                          const incrementalPercentage = delivery.percentage - previousPercentage;
+                          
+                          return formatCurrency((proposedValue * incrementalPercentage) / 100);
+                        })()}
                       </div>
                     </div>
                   </div>

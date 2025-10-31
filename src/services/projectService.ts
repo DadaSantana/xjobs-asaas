@@ -779,9 +779,11 @@ export class ProjectService {
       });
 
       // Calcular porcentagem total aceita
-      const totalAccepted = updatedDeliveries
-        .filter((d: any) => d.status === 'aceita')
-        .reduce((sum: number, d: any) => sum + d.percentage, 0);
+      // Como os percentuais são CUMULATIVOS, pegamos o MAIOR valor aceito
+      const acceptedDeliveries = updatedDeliveries.filter((d: any) => d.status === 'aceita');
+      const totalAccepted = acceptedDeliveries.length > 0
+        ? Math.max(...acceptedDeliveries.map((d: any) => d.percentage))
+        : 0;
 
       await updateDoc(projectRef, {
         partialDeliveries: updatedDeliveries,

@@ -637,7 +637,23 @@ const DetalheProjeto = () => {
                                 projectValue = selectedLike.proposedValue;
                               }
                             }
-                            return formatCurrency((projectValue * delivery.percentage) / 100);
+                            
+                            // Calcular percentual incremental em relação às entregas já aceitas
+                            const acceptedDeliveries = (project.partialDeliveries || [])
+                              .filter(d => d.status === 'aceita')
+                              .sort((a, b) => {
+                                const dateA = a.acceptedAt?.toDate ? a.acceptedAt.toDate().getTime() : 0;
+                                const dateB = b.acceptedAt?.toDate ? b.acceptedAt.toDate().getTime() : 0;
+                                return dateB - dateA; // mais recente primeiro
+                              });
+                            
+                            const previousPercentage = acceptedDeliveries.length > 0 
+                              ? acceptedDeliveries[0].percentage 
+                              : 0;
+                            
+                            const incrementalPercentage = delivery.percentage - previousPercentage;
+                            
+                            return formatCurrency((projectValue * incrementalPercentage) / 100);
                           })()}
                         </div>
                       </div>
@@ -730,13 +746,37 @@ const DetalheProjeto = () => {
                             
                             if (payment && fundStatus) {
                               console.log('[AcceptDelivery] Liberando fundos...');
+                              
+                              // Calcular o percentual incremental (delta) em relação às entregas já aceitas
+                              const acceptedDeliveries = (project.partialDeliveries || [])
+                                .filter(d => d.status === 'aceita')
+                                .sort((a, b) => {
+                                  const dateA = a.acceptedAt?.toDate ? a.acceptedAt.toDate().getTime() : 0;
+                                  const dateB = b.acceptedAt?.toDate ? b.acceptedAt.toDate().getTime() : 0;
+                                  return dateB - dateA; // mais recente primeiro
+                                });
+                              
+                              // O percentual anterior é da última entrega aceita (se houver)
+                              const previousPercentage = acceptedDeliveries.length > 0 
+                                ? acceptedDeliveries[0].percentage 
+                                : 0;
+                              
+                              // O percentual incremental é a diferença
+                              const incrementalPercentage = delivery.percentage - previousPercentage;
+                              
+                              console.log('[AcceptDelivery] Percentuais:', {
+                                cumulativePercentage: delivery.percentage,
+                                previousPercentage,
+                                incrementalPercentage
+                              });
+                              
                               await FundsService.requestFundRelease(
                                 {
                                   projectId: project.id,
                                   chatId: '',
                                   releaseType: 'partial',
-                                  percentage: delivery.percentage,
-                                  reason: `Aceite de entrega parcial de ${delivery.percentage}%`,
+                                  percentage: incrementalPercentage,
+                                  reason: `Aceite de entrega parcial de ${delivery.percentage}% (${incrementalPercentage}% adicional)`,
                                 },
                                 project.clientId,
                                 userProfile.name || 'Cliente',
@@ -797,7 +837,7 @@ const DetalheProjeto = () => {
               </h3>
               
               <div className="space-y-2">
-                {project.partialDeliveries.filter(d => d.status === 'aceita').map((delivery) => (
+                {project.partialDeliveries.filter(d => d.status === 'aceita').map((delivery, index, acceptedDeliveries) => (
                   <div key={delivery.id} className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
                     <div className="flex items-center gap-3">
                       <CheckCircle className="h-5 w-5 text-green-600" />
@@ -829,7 +869,23 @@ const DetalheProjeto = () => {
                             projectValue = selectedLike.proposedValue;
                           }
                         }
-                        return formatCurrency((projectValue * delivery.percentage) / 100);
+                        
+                        // Calcular percentual anterior acumulado (ordenar por data de aceite)
+                        const sortedDeliveries = [...acceptedDeliveries].sort((a, b) => {
+                          const dateA = a.acceptedAt?.toDate ? a.acceptedAt.toDate().getTime() : 0;
+                          const dateB = b.acceptedAt?.toDate ? b.acceptedAt.toDate().getTime() : 0;
+                          return dateA - dateB;
+                        });
+                        
+                        const currentIndex = sortedDeliveries.findIndex(d => d.id === delivery.id);
+                        const previousPercentage = currentIndex > 0 
+                          ? sortedDeliveries[currentIndex - 1].percentage 
+                          : 0;
+                        
+                        // O valor incremental é a diferença entre o percentual atual e o anterior
+                        const incrementalPercentage = delivery.percentage - previousPercentage;
+                        
+                        return formatCurrency((projectValue * incrementalPercentage) / 100);
                       })()}
                     </div>
                   </div>
@@ -946,7 +1002,19 @@ const DetalheProjeto = () => {
                 <Button
                   className="w-full"
                   variant="outline"
-                  onClick={() => setPartialDialogOpen(true)}
+                  onClick={async () => {
+                    // Atualizar status antes de abrir o modal
+                    const fs = await FundsService.getProjectFundStatus(project.id);
+                    if (fs) {
+                      setFundStatus(fs);
+                      const base = Math.min(100, Math.max(0, Math.round((fs.releasedPercentage || 0) / 10) * 10));
+                      releasedPctRef.current = base;
+                      const next = base < 100 ? base + 10 : 100;
+                      setPartialPercent(next);
+                      console.log('[DetalheProjeto] openModal:refreshed', { base, next, actualReleased: fs.releasedPercentage });
+                    }
+                    setPartialDialogOpen(true);
+                  }}
                 >
                   Realizar pagamento
                 </Button>
@@ -1093,7 +1161,14 @@ const DetalheProjeto = () => {
                   // Atualizar releasedPctRef com o novo valor liberado
                   if (fs2) {
                     releasedPctRef.current = Math.min(100, Math.max(0, Math.round((fs2.releasedPercentage || 0) / 10) * 10));
-                    console.log('[DetalheProjeto] confirm:updated-releasedPctRef', { releasedPct: releasedPctRef.current });
+                    // Atualizar partialPercent para o próximo valor sugerido
+                    const nextSuggested = releasedPctRef.current < 100 ? releasedPctRef.current + 10 : 100;
+                    setPartialPercent(nextSuggested);
+                    console.log('[DetalheProjeto] confirm:updated-releasedPctRef', { 
+                      releasedPct: releasedPctRef.current, 
+                      nextSuggested,
+                      actualReleased: fs2.releasedPercentage 
+                    });
                   }
                   if (!fs2 || fs2.remainingAmount == null) {
                     console.warn('[DetalheProjeto] fund status veio nulo; forçando leitura direta do payment');
@@ -1108,8 +1183,10 @@ const DetalheProjeto = () => {
                       console.error('[DetalheProjeto] completeProject:error', err);
                     }
                   } else {
-                    toast({ title: 'Solicitado', description: `Liberação de ${partialPercent}% registrada.` });
-                    console.log('[DetalheProjeto] confirm:partial-release-toast');
+                    // Calcular o delta real liberado para a mensagem
+                    const actualDelta = deltaPct;
+                    toast({ title: 'Solicitado', description: `Liberação de ${actualDelta.toFixed(0)}% adicional registrada (${releasedPctRef.current}% total liberado).` });
+                    console.log('[DetalheProjeto] confirm:partial-release-toast', { actualDelta, totalNow: releasedPctRef.current });
                   }
                   setPartialDialogOpen(false);
                 } catch (e) {
