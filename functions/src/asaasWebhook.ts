@@ -36,170 +36,28 @@ export const asaasWebhook = functions.https.onRequest(async (req, res) => {
     }
 
     try {
-      const { event, transfer } = req.body;
+      const { event, transfer, receivableAnticipation } = req.body;
 
       console.log('[Asaas Webhook] Evento recebido:', event);
-      console.log('[Asaas Webhook] Dados da transferência:', transfer);
+      console.log('[Asaas Webhook] Dados:', { transfer, receivableAnticipation });
 
-      // Eventos possíveis:
-      // - TRANSFER_CREATED
-      // - TRANSFER_PENDING
-      // - TRANSFER_BANK_PROCESSING
-      // - TRANSFER_DONE
-      // - TRANSFER_CANCELLED
-      // - TRANSFER_FAILED
-
-      if (!transfer || !transfer.id) {
-        console.log('[Asaas Webhook] Transferência inválida, ignorando');
-        res.status(200).json({ received: true });
-        return;
+      // Processar eventos de transferência (saques)
+      if (event.startsWith('TRANSFER_') && transfer && transfer.id) {
+        await handleTransferEvent(event, transfer);
       }
-
-      // Buscar a solicitação de saque correspondente
-      const withdrawRequestsQuery = await db.collection('withdrawRequests')
-        .where('transferId', '==', transfer.id)
-        .limit(1)
-        .get();
-
-      if (withdrawRequestsQuery.empty) {
-        console.log('[Asaas Webhook] Nenhuma solicitação de saque encontrada para transferId:', transfer.id);
-        res.status(200).json({ received: true });
-        return;
+      
+      // Processar eventos de antecipação (adiantamentos)
+      else if (event.startsWith('RECEIVABLE_ANTICIPATION_') && receivableAnticipation && receivableAnticipation.id) {
+        await handleAnticipationEvent(event, receivableAnticipation);
       }
-
-      const withdrawRequestDoc = withdrawRequestsQuery.docs[0];
-      const withdrawRequestData = withdrawRequestDoc.data();
-
-      console.log('[Asaas Webhook] Solicitação de saque encontrada:', withdrawRequestDoc.id);
-
-      // Mapear status do Asaas para status interno
-      let newStatus = 'pending';
-      let statusMessage = '';
-
-      switch (event) {
-        case 'TRANSFER_CREATED':
-        case 'TRANSFER_PENDING':
-          newStatus = 'processing';
-          statusMessage = 'Transferência em processamento';
-          break;
-        
-        case 'TRANSFER_BANK_PROCESSING':
-          newStatus = 'processing';
-          statusMessage = 'Transferência sendo processada pelo banco';
-          break;
-        
-        case 'TRANSFER_DONE':
-          newStatus = 'completed';
-          statusMessage = 'Transferência concluída';
-          break;
-        
-        case 'TRANSFER_CANCELLED':
-          newStatus = 'cancelled';
-          statusMessage = 'Transferência cancelada';
-          break;
-        
-        case 'TRANSFER_FAILED':
-          newStatus = 'failed';
-          statusMessage = `Transferência falhou: ${transfer.failReason || 'Motivo desconhecido'}`;
-          break;
-        
-        default:
-          console.log('[Asaas Webhook] Evento desconhecido:', event);
-          res.status(200).json({ received: true });
-          return;
-      }
-
-      // Buscar também pelos withdrawals
-      const withdrawalsQuery = await db.collection('withdrawals')
-        .where('asaasTransferId', '==', transfer.id)
-        .limit(1)
-        .get();
-
-      if (!withdrawalsQuery.empty) {
-        const withdrawalDoc = withdrawalsQuery.docs[0];
-        
-        await db.collection('withdrawals').doc(withdrawalDoc.id).update({
-          status: newStatus,
-          transferStatus: transfer.status,
-          statusMessage,
-          lastWebhookEvent: event,
-          lastWebhookData: transfer,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        console.log('[Asaas Webhook] Withdrawal atualizado:', withdrawalDoc.id, 'novo status:', newStatus);
-      }
-
-      // Atualizar solicitação de saque
-      await db.collection('withdrawRequests').doc(withdrawRequestDoc.id).update({
-        status: newStatus,
-        transferStatus: transfer.status,
-        statusMessage,
-        lastWebhookEvent: event,
-        lastWebhookData: transfer,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-
-      console.log('[Asaas Webhook] Solicitação atualizada:', withdrawRequestDoc.id, 'novo status:', newStatus);
-
-      // Atualizar transação de saque correspondente
-      const transactionsQuery = await db.collection('fundTransactions')
-        .where('withdrawRequestId', '==', withdrawRequestDoc.id)
-        .limit(1)
-        .get();
-
-      if (!transactionsQuery.empty) {
-        const transactionDoc = transactionsQuery.docs[0];
-        
-        await db.collection('fundTransactions').doc(transactionDoc.id).update({
-          status: newStatus,
-          statusMessage,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        console.log('[Asaas Webhook] Transação atualizada:', transactionDoc.id);
-      }
-
-      // Se a transferência foi concluída ou falhou, notificar o usuário
-      if (newStatus === 'completed' || newStatus === 'failed') {
-        const freelancerId = withdrawRequestData.freelancerId;
-        const amount = withdrawRequestData.amount;
-        const netAmount = withdrawRequestData.netAmount || amount;
-
-        const notificationData = {
-          userId: freelancerId,
-          type: newStatus === 'completed' ? 'withdrawal_completed' : 'withdrawal_failed',
-          title: newStatus === 'completed' ? 'Saque Concluído' : 'Saque Falhou',
-          message: newStatus === 'completed' 
-            ? `Seu saque de R$ ${netAmount.toFixed(2)} foi concluído e transferido para sua conta.`
-            : `Seu saque de R$ ${amount.toFixed(2)} falhou. ${transfer.failReason || 'Entre em contato com o suporte.'}`,
-          read: false,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
-        };
-
-        await db.collection('notifications').add(notificationData);
-        console.log('[Asaas Webhook] Notificação criada para usuário:', freelancerId);
-
-        // Se concluído, criar registro de valor liberado
-        if (newStatus === 'completed') {
-          await db.collection('fundTransactions').add({
-            type: 'withdrawal_released',
-            freelancerId: freelancerId,
-            amount: netAmount,
-            description: 'Saque confirmado e liberado pelo Asaas',
-            status: 'completed',
-            gateway: 'asaas',
-            asaasTransferId: transfer.id,
-            processedAt: admin.firestore.FieldValue.serverTimestamp(),
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
-          });
-        }
+      
+      else {
+        console.log('[Asaas Webhook] Evento não tratado ou dados inválidos:', event);
       }
 
       res.status(200).json({ 
         received: true,
-        processed: true,
-        status: newStatus
+        processed: true
       });
 
     } catch (error) {
@@ -211,4 +69,190 @@ export const asaasWebhook = functions.https.onRequest(async (req, res) => {
     }
   });
 });
+
+/**
+ * Processar eventos de transferência (saques)
+ */
+async function handleTransferEvent(eventType: string, transfer: Record<string, unknown>): Promise<void> {
+  console.log('[Asaas Webhook] Processando evento de transferência:', eventType, transfer.id);
+
+  try {
+    // Buscar a transação de saque pelo ID da transferência Asaas
+    const withdrawalQuery = await db.collection('withdrawals')
+      .where('asaasTransferId', '==', transfer.id)
+      .limit(1)
+      .get();
+
+    if (withdrawalQuery.empty) {
+      console.log('[Asaas Webhook] Saque não encontrado para transferência:', transfer.id);
+      return;
+    }
+
+    const withdrawalDoc = withdrawalQuery.docs[0];
+    const withdrawal = withdrawalDoc.data();
+
+    let newStatus = 'pending';
+    let statusMessage = '';
+
+    switch (eventType) {
+      case 'TRANSFER_CREATED':
+      case 'TRANSFER_PENDING':
+      case 'TRANSFER_IN_BANK_PROCESSING':
+      case 'TRANSFER_BLOCKED':
+        newStatus = 'processing';
+        statusMessage = 'Transferência em processamento';
+        break;
+
+      case 'TRANSFER_DONE':
+        newStatus = 'completed';
+        statusMessage = 'Transferência concluída';
+        
+        // Criar registro de valor liberado
+        await db.collection('fundTransactions').add({
+          type: 'withdrawal_completed',
+          freelancerId: withdrawal.freelancerId,
+          amount: withdrawal.netAmount || withdrawal.amount,
+          description: 'Saque concluído via Asaas',
+          status: 'completed',
+          gateway: 'asaas',
+          asaasTransferId: transfer.id,
+          withdrawalId: withdrawalDoc.id,
+          processedAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        break;
+
+      case 'TRANSFER_FAILED':
+        newStatus = 'failed';
+        statusMessage = `Transferência falhou: ${transfer.failReason || 'Erro no processamento'}`;
+        
+        // Estornar valor para o saldo disponível
+        await db.collection('fundTransactions').add({
+          type: 'withdrawal_reversal',
+          freelancerId: withdrawal.freelancerId,
+          amount: withdrawal.amount,
+          description: `Estorno de saque falho: ${transfer.failReason || 'Erro no processamento'}`,
+          status: 'completed',
+          gateway: 'asaas',
+          asaasTransferId: transfer.id,
+          withdrawalId: withdrawalDoc.id,
+          processedAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        break;
+
+      case 'TRANSFER_CANCELLED':
+        newStatus = 'cancelled';
+        statusMessage = 'Transferência cancelada';
+        
+        // Estornar valor para o saldo disponível
+        await db.collection('fundTransactions').add({
+          type: 'withdrawal_reversal',
+          freelancerId: withdrawal.freelancerId,
+          amount: withdrawal.amount,
+          description: 'Estorno de saque cancelado',
+          status: 'completed',
+          gateway: 'asaas',
+          asaasTransferId: transfer.id,
+          withdrawalId: withdrawalDoc.id,
+          processedAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        break;
+    }
+
+    // Atualizar status do saque
+    await withdrawalDoc.ref.update({
+      status: newStatus,
+      asaasStatus: transfer.status,
+      statusMessage,
+      lastWebhookEvent: eventType,
+      lastWebhookData: transfer,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      ...(newStatus === 'completed' ? { completedAt: admin.firestore.FieldValue.serverTimestamp() } : {})
+    });
+
+    console.log('[Asaas Webhook] Saque atualizado:', withdrawalDoc.id, 'novo status:', newStatus);
+
+  } catch (error) {
+    console.error('[Asaas Webhook] Erro ao processar evento de transferência:', error);
+  }
+}
+
+/**
+ * Processar eventos de antecipação (adiantamentos)
+ */
+async function handleAnticipationEvent(eventType: string, anticipation: Record<string, unknown>): Promise<void> {
+  console.log('[Asaas Webhook] Processando evento de antecipação:', eventType, anticipation.id);
+
+  try {
+    // Buscar a solicitação de adiantamento pelo ID da antecipação Asaas
+    const advanceQuery = await db.collection('advanceRequests')
+      .where('asaasAnticipationId', '==', anticipation.id)
+      .limit(1)
+      .get();
+
+    if (advanceQuery.empty) {
+      console.log('[Asaas Webhook] Adiantamento não encontrado para antecipação:', anticipation.id);
+      return;
+    }
+
+    const advanceDoc = advanceQuery.docs[0];
+    const advance = advanceDoc.data();
+
+    let newStatus = advance.status;
+    let statusMessage = '';
+
+    switch (eventType) {
+      case 'RECEIVABLE_ANTICIPATION_PENDING':
+        statusMessage = 'Antecipação em análise';
+        break;
+
+      case 'RECEIVABLE_ANTICIPATION_SCHEDULED':
+        statusMessage = 'Antecipação agendada';
+        break;
+
+      case 'RECEIVABLE_ANTICIPATION_CREDITED':
+        newStatus = 'completed';
+        statusMessage = 'Antecipação creditada - valor disponível';
+        break;
+
+      case 'RECEIVABLE_ANTICIPATION_DEBITED':
+        statusMessage = 'Antecipação debitada';
+        break;
+
+      case 'RECEIVABLE_ANTICIPATION_DENIED':
+        newStatus = 'rejected';
+        statusMessage = 'Antecipação negada pelo Asaas';
+        break;
+
+      case 'RECEIVABLE_ANTICIPATION_CANCELLED':
+        newStatus = 'cancelled';
+        statusMessage = 'Antecipação cancelada';
+        break;
+
+      case 'RECEIVABLE_ANTICIPATION_OVERDUE':
+        newStatus = 'failed';
+        statusMessage = 'Antecipação vencida';
+        break;
+    }
+
+    // Atualizar status do adiantamento
+    await advanceDoc.ref.update({
+      status: newStatus,
+      anticipationStatus: anticipation.status,
+      statusMessage,
+      lastWebhookEvent: eventType,
+      lastWebhookData: anticipation,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      ...(newStatus === 'completed' ? { completedAt: admin.firestore.FieldValue.serverTimestamp() } : {}),
+      ...(newStatus === 'rejected' ? { rejectionReason: statusMessage } : {})
+    });
+
+    console.log('[Asaas Webhook] Adiantamento atualizado:', advanceDoc.id, 'novo status:', newStatus);
+
+  } catch (error) {
+    console.error('[Asaas Webhook] Erro ao processar evento de antecipação:', error);
+  }
+}
 

@@ -168,26 +168,27 @@ export function AdvanceRequestDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="max-w-md max-h-[95vh] flex flex-col p-0">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b">
           <DialogTitle>Solicitar Adiantamento</DialogTitle>
           <DialogDescription>
             Receba antecipadamente os valores bloqueados (pagamentos em cartão de crédito) do projeto {projectTitle && `"${projectTitle}"`}
           </DialogDescription>
         </DialogHeader>
 
-        {(checkingEligibility || simulatingAdvance) ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin mr-2" />
-            <span>{checkingEligibility ? 'Verificando elegibilidade...' : 'Simulando com Asaas...'}</span>
-          </div>
-        ) : !eligibility?.eligible ? (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {(checkingEligibility || simulatingAdvance) ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin mr-2" />
+              <span>{checkingEligibility ? 'Verificando elegibilidade...' : 'Simulando com Asaas...'}</span>
+            </div>
+          ) : !eligibility?.eligible ? (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4" id="advance-form">
             {/* Simulação do Asaas */}
             {simulation && (
               <div className="bg-green-50 border border-green-300 rounded-lg p-4 space-y-2">
@@ -310,31 +311,35 @@ export function AdvanceRequestDialog({
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onClose}
-                disabled={loading}
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="submit"
-                disabled={loading || !requestedAmount || requestedAmount > eligibility.maxAdvanceAmount}
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Solicitando...
-                  </>
-                ) : (
-                  'Solicitar Adiantamento'
-                )}
-              </Button>
-            </DialogFooter>
           </form>
+          )}
+        </div>
+
+        {eligibility?.eligible && !checkingEligibility && !simulatingAdvance && (
+          <DialogFooter className="px-6 py-4 border-t bg-gray-50">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={loading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              form="advance-form"
+              disabled={loading || !requestedAmount || requestedAmount > eligibility.maxAdvanceAmount}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Solicitando...
+                </>
+              ) : (
+                'Solicitar Adiantamento'
+              )}
+            </Button>
+          </DialogFooter>
         )}
       </DialogContent>
     </Dialog>
