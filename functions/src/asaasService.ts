@@ -41,8 +41,7 @@ export interface AsaasPayment {
   dueDate: string; // formato: YYYY-MM-DD
   description?: string;
   externalReference?: string;
-  installmentCount?: number;
-  installmentValue?: number;
+  // NOTA: Parcelamento desabilitado - pagamentos sempre à vista
   discount?: {
     value?: number;
     dueDateLimitDays?: number;
@@ -252,15 +251,21 @@ export async function createOrUpdateCustomer(customerData: AsaasCustomer): Promi
 
 /**
  * Cria uma cobrança no Asaas
+ * NOTA: Parcelamento está desabilitado. Todos os pagamentos são à vista.
  */
 export async function createPayment(paymentData: AsaasPayment): Promise<AsaasPaymentResponse> {
   try {
     console.log('[Asaas] Criando cobrança:', paymentData);
     
+    // Garantir que não há campos de parcelamento
+    const cleanedPaymentData = { ...paymentData } as Record<string, unknown>;
+    delete cleanedPaymentData.installmentCount;
+    delete cleanedPaymentData.installmentValue;
+    
     const payment = await asaasRequest<AsaasPaymentResponse>(
       '/payments',
       'POST',
-      paymentData
+      cleanedPaymentData
     );
 
     console.log('[Asaas] Cobrança criada com sucesso:', payment.id);
@@ -311,6 +316,105 @@ export async function createTransfer(transferData: AsaasTransfer): Promise<Asaas
     return transfer;
   } catch (error) {
     console.error('[Asaas] Erro ao criar transferência:', error);
+    throw error;
+  }
+}
+
+/**
+ * Buscar limites de antecipação disponíveis
+ * GET /anticipations/limits
+ */
+export async function getAnticipationLimits(): Promise<{
+  totalLimit: number;
+  creditCardLimit: number;
+  bankSlipLimit: number;
+}> {
+  try {
+    console.log('[Asaas] Buscando limites de antecipação');
+    
+    const response = await asaasRequest<{
+      totalLimit: number;
+      creditCardLimit: number;
+      bankSlipLimit: number;
+    }>(
+      '/anticipations/limits',
+      'GET'
+    );
+
+    console.log('[Asaas] Limites de antecipação:', response);
+    return response;
+  } catch (error) {
+    console.error('[Asaas] Erro ao buscar limites de antecipação:', error);
+    throw error;
+  }
+}
+
+/**
+ * Simular antecipação de pagamento
+ * POST /anticipations/simulate
+ */
+export async function simulateAnticipation(paymentId: string): Promise<{
+  value: number;
+  netValue: number;
+  fee: number;
+  isDocumentationRequired: boolean;
+}> {
+  try {
+    console.log('[Asaas] Simulando antecipação para pagamento:', paymentId);
+    
+    const response = await asaasRequest<{
+      value: number;
+      netValue: number;
+      fee: number;
+      isDocumentationRequired: boolean;
+    }>(
+      '/anticipations/simulate',
+      'POST',
+      { payment: paymentId }
+    );
+
+    console.log('[Asaas] Simulação de antecipação:', response);
+    return response;
+  } catch (error) {
+    console.error('[Asaas] Erro ao simular antecipação:', error);
+    throw error;
+  }
+}
+
+/**
+ * Solicitar antecipação de pagamento
+ * POST /anticipations
+ */
+export async function createAnticipation(paymentId: string): Promise<{
+  id: string;
+  status: string;
+  value: number;
+  netValue: number;
+  fee: number;
+  requestDate: string;
+  anticipationDate: string;
+}> {
+  try {
+    console.log('[Asaas] Solicitando antecipação para pagamento:', paymentId);
+    
+    const response = await asaasRequest<{
+      id: string;
+      status: string;
+      value: number;
+      netValue: number;
+      fee: number;
+      requestDate: string;
+      anticipationDate: string;
+    }>(
+      '/anticipations',
+      'POST',
+      { payment: paymentId }
+    );
+
+    console.log('[Asaas] Antecipação criada com sucesso:', response.id);
+    return response;
+  } catch (error) {
+    console.error('[Asaas] Erro ao criar antecipação:', error);
     throw error;
   }
 }
@@ -499,6 +603,9 @@ export default {
   createSubscription,
   getSubscriptionStatus,
   cancelSubscription,
+  getAnticipationLimits,
+  simulateAnticipation,
+  createAnticipation,
   cleanDocument,
   formatDateForAsaas,
   calculateDueDate,

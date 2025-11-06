@@ -45,6 +45,17 @@ ASAAS_API_KEY=sua_chave_aqui
 ASAAS_WALLET_ID=seu_wallet_id_aqui
 ```
 
+## ⚠️ IMPORTANTE: Parcelamento Desabilitado
+
+**Todos os pagamentos com cartão de crédito são processados À VISTA.**
+
+O sistema não aceita parcelamento em nenhum contexto:
+- Pagamentos de projetos
+- Assinaturas de planos
+- Qualquer outra transação
+
+Isso é intencional para evitar atrasos na disponibilização de valores e simplificar o controle financeiro.
+
 ## 📊 Tipagens e Interfaces
 
 ### Payment Interface

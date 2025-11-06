@@ -27,6 +27,7 @@ import { ptBR } from 'date-fns/locale';
 import { BankAccount } from '@/types/bankAccount';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { AdvanceRequestDialog } from '@/components/advance/AdvanceRequestDialog';
 
 const MinhasFinancas = () => {
   const { loading: recipientLoading } = useRecipient();
@@ -47,8 +48,10 @@ const MinhasFinancas = () => {
     totalEarnings: number;
     totalReleased: number;
     pendingAmount: number;
-    availableBalance: number;
-    pendingBalance: number; // Liberado mas ainda bloqueado por prazo
+    availableBalance: number; // Saldo disponível para saque
+    releasedBalance: number; // Total liberado confirmado pelo Asaas
+    processingBalance: number; // Saques em processamento
+    blockedBalance: number; // Bloqueado (cartão de crédito - 35 dias)
     pendingWithdrawals?: number;
   } | null>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -57,6 +60,8 @@ const MinhasFinancas = () => {
   const [pendingReleases, setPendingReleases] = useState<any[]>([]); // Liberações com prazo pendente
   const [showWithdrawDialog, setShowWithdrawDialog] = useState(false);
   const [withdrawDialogData, setWithdrawDialogData] = useState<{ amount: number; netAmount: number } | null>(null);
+  const [showAdvanceDialog, setShowAdvanceDialog] = useState(false);
+  const [selectedProjectForAdvance, setSelectedProjectForAdvance] = useState<string | null>(null);
 
   const handleSubmit = async (data: BankAccount) => {
     if (!userProfile?.uid) {
@@ -215,12 +220,6 @@ const MinhasFinancas = () => {
           FundsService.getFreelancerReleases(userProfile.uid)
         ]);
         
-        console.log('[MinhasFinancas] Saldo carregado do frontend:', sum);
-        console.log('[MinhasFinancas] - availableBalance:', sum.availableBalance);
-        console.log('[MinhasFinancas] - pendingBalance:', sum.pendingBalance);
-        console.log('[MinhasFinancas] - totalReleased:', sum.totalReleased);
-        console.log('[MinhasFinancas] - pendingWithdrawals:', sum.pendingWithdrawals);
-        
         setSummary({ ...sum, pendingWithdrawals: sum.pendingWithdrawals || 0, pendingBalance: sum.pendingBalance || 0 });
         setTransactions(txs);
         setReleases(rls);
@@ -344,9 +343,10 @@ const MinhasFinancas = () => {
             <div className="flex items-center justify-center py-6 text-gray-600">Carregando saldo...</div>
           ) : summary ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-              <div className="text-center p-3 md:p-4 bg-green-50 rounded-lg">
-                <div className="text-xs md:text-sm text-gray-600">Saldo Disponível</div>
-                <div className="text-xs text-gray-500 mb-1">Disponível para saque</div>
+              {/* Card 1: Saldo Disponível (para saque) */}
+              <div className="text-center p-3 md:p-4 bg-green-50 rounded-lg border-2 border-green-200">
+                <div className="text-xs md:text-sm text-gray-600 font-semibold">Saldo Disponível</div>
+                <div className="text-xs text-gray-500 mb-1">✅ Para saque</div>
                 <div className="text-lg md:text-2xl font-bold text-green-700">{formatCurrency(summary.availableBalance)}</div>
                 <div className="text-xs text-gray-500 mt-1">
                   Taxa PIX: R$ 2,00 por transação
@@ -386,21 +386,42 @@ const MinhasFinancas = () => {
                     }
                   }}
                 >
-                  Saque
+                  💰 Solicitar Saque
                 </Button>
               </div>
-              <div className="text-center p-3 md:p-4 bg-blue-50 rounded-lg">
-                <div className="text-xs md:text-sm text-gray-600">Total Liberado</div>
-                <div className="text-lg md:text-2xl font-bold text-blue-700">{formatCurrency(summary.totalReleased)}</div>
+              
+              {/* Card 2: Total Liberado (confirmado pelo Asaas) */}
+              <div className="text-center p-3 md:p-4 bg-blue-50 rounded-lg border-2 border-blue-200">
+                <div className="text-xs md:text-sm text-gray-600 font-semibold">Total Liberado</div>
+                <div className="text-xs text-gray-500 mb-1">✓ Confirmado pelo Asaas</div>
+                <div className="text-lg md:text-2xl font-bold text-blue-700">{formatCurrency(summary.releasedBalance)}</div>
               </div>
-              <div className="text-center p-3 md:p-4 bg-orange-50 rounded-lg">
-                <div className="text-xs md:text-sm text-gray-600">Pendente</div>
-                <div className="text-xs text-gray-500 mb-1">Aguardando prazo</div>
-                <div className="text-lg md:text-2xl font-bold text-orange-700">{formatCurrency(summary.pendingBalance)}</div>
+              
+              {/* Card 3: Processando (saques em processamento) */}
+              <div className="text-center p-3 md:p-4 bg-yellow-50 rounded-lg border-2 border-yellow-200">
+                <div className="text-xs md:text-sm text-gray-600 font-semibold">Processando</div>
+                <div className="text-xs text-gray-500 mb-1">⏳ Saque solicitado</div>
+                <div className="text-lg md:text-2xl font-bold text-yellow-700">{formatCurrency(summary.processingBalance)}</div>
               </div>
-              <div className="text-center p-3 md:p-4 bg-amber-50 rounded-lg">
-                <div className="text-xs md:text-sm text-gray-600">A Liberar</div>
-                <div className="text-lg md:text-2xl font-bold text-amber-700">{formatCurrency(summary.pendingAmount)}</div>
+              
+              {/* Card 4: Pendente (bloqueado por cartão 35 dias) */}
+              <div className="text-center p-3 md:p-4 bg-orange-50 rounded-lg border-2 border-orange-200">
+                <div className="text-xs md:text-sm text-gray-600 font-semibold">Pendente</div>
+                <div className="text-xs text-gray-500 mb-1">💳 Cartão (35 dias)</div>
+                <div className="text-lg md:text-2xl font-bold text-orange-700">{formatCurrency(summary.blockedBalance)}</div>
+                {summary.blockedBalance > 0 && pendingReleases.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-2 text-xs border-blue-600 text-blue-600 hover:bg-blue-50"
+                    onClick={() => {
+                      setSelectedProjectForAdvance(pendingReleases[0].projectId);
+                      setShowAdvanceDialog(true);
+                    }}
+                  >
+                    ⚡ Adiantar Agora
+                  </Button>
+                )}
               </div>
             </div>
           ) : (
@@ -415,10 +436,11 @@ const MinhasFinancas = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <AlertCircle className="h-5 w-5 text-orange-500" />
-              Valores Pendentes de Liberação
+              Valores Bloqueados (Cartão de Crédito)
             </CardTitle>
             <CardDescription>
-              Valores já liberados pelo cliente mas aguardando prazo de compensação (cartão de crédito)
+              Valores já liberados pelo cliente mas aguardando prazo de 35 dias para disponibilização. 
+              <span className="font-semibold text-blue-600"> Você pode solicitar adiantamento com taxa de 2%!</span>
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -428,14 +450,28 @@ const MinhasFinancas = () => {
                   <div className="flex-1">
                     <div className="font-medium text-gray-900">{release.projectTitle || 'Projeto'}</div>
                     <div className="text-sm text-gray-600 mt-1">
-                      Método: <Badge variant="outline">{release.paymentMethod === 'CREDIT_CARD' ? 'Cartão de Crédito' : release.paymentMethod}</Badge>
+                      Método: <Badge variant="outline" className="bg-blue-50">💳 Cartão de Crédito (35 dias)</Badge>
                     </div>
                     <div className="text-sm text-orange-600 mt-1">
                       Disponível em: <strong>{release.availableDate}</strong>
                     </div>
+                    <div className="text-xs text-blue-600 mt-2">
+                      💡 <strong>Dica:</strong> Solicite adiantamento para receber agora (taxa de 2%)
+                    </div>
                   </div>
                   <div className="text-right">
                     <div className="text-lg font-bold text-orange-700">{formatCurrency(release.amount)}</div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2 text-xs border-blue-300 text-blue-600 hover:bg-blue-50"
+                      onClick={() => {
+                        setSelectedProjectForAdvance(release.projectId);
+                        setShowAdvanceDialog(true);
+                      }}
+                    >
+                      ⚡ Solicitar Adiantamento
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -749,6 +785,19 @@ const MinhasFinancas = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog de Adiantamento */}
+      {userProfile?.uid && selectedProjectForAdvance && (
+        <AdvanceRequestDialog
+          isOpen={showAdvanceDialog}
+          onClose={() => {
+            setShowAdvanceDialog(false);
+            setSelectedProjectForAdvance(null);
+          }}
+          projectId={selectedProjectForAdvance}
+          freelancerId={userProfile.uid}
+        />
+      )}
     </div>
   );
 };

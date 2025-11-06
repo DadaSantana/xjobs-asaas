@@ -35,11 +35,11 @@ const ADVANCE_STATS_COLLECTION = 'freelancerAdvanceStats';
  */
 const DEFAULT_SETTINGS: AdvanceSettings = {
   enabled: true,
-  feePercentage: 5, // 5% de taxa
-  minAmount: 50, // R$ 50 mínimo
+  feePercentage: 2, // 2% de taxa
+  minAmount: 5, // R$ 5 mínimo (para testes)
   maxAmount: 5000, // R$ 5.000 máximo
   automaticApproval: true,
-  automaticApprovalLimit: 1000, // Até R$ 1.000 aprovação automática
+  automaticApprovalLimit: 500, // Até R$ 500 aprovação automática
   maxAdvancesPerMonth: 3, // Máximo 3 adiantamentos por mês
   cooldownDays: 7, // 7 dias entre adiantamentos
   updatedAt: Timestamp.now(),
@@ -51,14 +51,15 @@ const DEFAULT_SETTINGS: AdvanceSettings = {
  */
 export async function getAdvanceSettings(): Promise<AdvanceSettings> {
   try {
+    // Forçar atualização das configurações com novos valores
+    await setDoc(doc(db, ADVANCE_SETTINGS_DOC), DEFAULT_SETTINGS, { merge: true });
+    
     const settingsDoc = await getDoc(doc(db, ADVANCE_SETTINGS_DOC));
     
     if (settingsDoc.exists()) {
       return { ...DEFAULT_SETTINGS, ...settingsDoc.data() } as AdvanceSettings;
     }
     
-    // Criar configurações padrão se não existir
-    await setDoc(doc(db, ADVANCE_SETTINGS_DOC), DEFAULT_SETTINGS);
     return DEFAULT_SETTINGS;
   } catch (error) {
     console.error('Erro ao buscar configurações de adiantamento:', error);
@@ -107,6 +108,17 @@ export async function checkAdvanceEligibility(
 
     // Buscar saldo disponível do freelancer para o projeto
     const availableAmount = await getProjectAvailableAmount(freelancerId, projectId);
+    
+    if (availableAmount === 0) {
+      return {
+        eligible: false,
+        reason: 'Adiantamento disponível apenas para valores bloqueados de pagamentos em cartão de crédito',
+        availableAmount: 0,
+        maxAdvanceAmount: 0,
+        currentMonthCount: 0,
+        maxMonthlyCount: settings.maxAdvancesPerMonth
+      };
+    }
     
     if (availableAmount < settings.minAmount) {
       return {
@@ -195,6 +207,7 @@ export async function checkAdvanceEligibility(
 
 /**
  * Buscar valor disponível para adiantamento em um projeto
+ * Apenas valores bloqueados (pagamentos com cartão de crédito com prazo de 35 dias)
  */
 async function getProjectAvailableAmount(freelancerId: string, projectId: string): Promise<number> {
   try {
@@ -202,8 +215,6 @@ async function getProjectAvailableAmount(freelancerId: string, projectId: string
     const paymentQuery = query(
       collection(db, 'projectPayments'),
       where('projectId', '==', projectId),
-      where('freelancerId', '==', freelancerId),
-      where('paymentStatus', '==', 'paid'),
       limit(1)
     );
     
@@ -215,11 +226,42 @@ async function getProjectAvailableAmount(freelancerId: string, projectId: string
     
     const payment = paymentSnap.docs[0].data();
     
-    // Valor disponível = valor pago - valor já liberado
-    const totalPaid = Number(payment.totalHeld || 0);
-    const totalReleased = Number(payment.totalReleased || 0);
+    // Verificar se tem asaasPaymentId (necessário para antecipação)
+    if (!payment.asaasPaymentId) {
+      return 0;
+    }
     
-    return Math.max(0, totalPaid - totalReleased);
+    // Verificar se o pagamento foi feito via cartão de crédito
+    if (payment.paymentMethod !== 'CREDIT_CARD') {
+      return 0; // Adiantamento apenas para pagamentos em cartão de crédito
+    }
+    
+    // Verificar se o valor ainda está bloqueado (availableAt no futuro)
+    const now = new Date();
+    const availableAt = payment.availableAt?.toDate();
+    
+    if (!availableAt || availableAt <= now) {
+      return 0; // Valor já disponível, não precisa de adiantamento
+    }
+    
+    // Buscar liberações para este projeto
+    const releasesQuery = query(
+      collection(db, 'fundReleases'),
+      where('projectId', '==', projectId),
+      where('freelancerId', '==', freelancerId),
+      where('status', '==', 'released')
+    );
+    
+    const releasesSnap = await getDocs(releasesQuery);
+    let totalReleased = 0;
+    
+    releasesSnap.forEach(doc => {
+      const release = doc.data();
+      totalReleased += Number(release.amount || 0);
+    });
+    
+    // Valor disponível = valor liberado (que está bloqueado)
+    return Math.max(0, totalReleased);
     
   } catch (error) {
     console.error('Erro ao buscar valor disponível:', error);

@@ -16,7 +16,7 @@ export interface AdvanceRequest {
   // Valores
   originalAmount: number; // Valor original disponível para adiantamento
   requestedAmount: number; // Valor solicitado pelo freelancer
-  feePercentage: number; // Percentual da taxa (padrão 5%)
+  feePercentage: number; // Percentual da taxa (padrão 2%)
   feeAmount: number; // Valor da taxa em reais
   netAmount: number; // Valor líquido que o freelancer receberá
   
@@ -71,7 +71,7 @@ export interface AdvanceTransaction {
 
 export interface AdvanceSettings {
   enabled: boolean;
-  feePercentage: number; // Percentual da taxa (padrão 5%)
+  feePercentage: number; // Percentual da taxa (padrão 2%)
   minAmount: number; // Valor mínimo para adiantamento
   maxAmount: number; // Valor máximo para adiantamento
   automaticApproval: boolean; // Se aprovação é automática

@@ -13,6 +13,7 @@ import {
   Timestamp,
   limit
 } from 'firebase/firestore';
+import { format } from 'date-fns';
 import { db } from '@/lib/firebase';
 import { 
   FundRelease, 
@@ -729,8 +730,10 @@ export class FundsService {
     totalEarnings: number;
     totalReleased: number;
     pendingAmount: number;
-    availableBalance: number;
-    pendingBalance: number; // Liberado mas ainda bloqueado (cartão de crédito)
+    availableBalance: number; // Saldo disponível para saque
+    releasedBalance: number; // Total liberado confirmado pelo Asaas
+    processingBalance: number; // Saques em processamento
+    blockedBalance: number; // Bloqueado (cartão de crédito - 35 dias)
     pendingWithdrawals?: number;
   }> {
     try {
@@ -775,21 +778,34 @@ export class FundsService {
 
       const totalReleased = Math.max(totalReleasedTx, totalReleasedRel);
 
-      // Buscar saques concluídos do freelancer
-      const withdrawTxQuery = query(
-        collection(db, 'fundTransactions'),
-        where('fromUserId', '==', freelancerId),
-        where('type', '==', 'withdraw'),
-        where('status', '==', 'completed')
+      // Buscar saques (completados e em processamento)
+      const withdrawalsQuery = query(
+        collection(db, 'withdrawals'),
+        where('freelancerId', '==', freelancerId)
       );
-      const withdrawSnapshot = await getDocs(withdrawTxQuery);
+      const withdrawalsSnapshot = await getDocs(withdrawalsQuery);
+      
       let totalWithdrawn = 0;
-      withdrawSnapshot.forEach(doc => {
-        const tx = doc.data();
-        totalWithdrawn += Number(tx.amount || 0);
+      let processingWithdrawals = 0;
+      let releasedByAsaas = 0;
+      
+      withdrawalsSnapshot.forEach(doc => {
+        const withdrawal = doc.data();
+        const amount = Number(withdrawal.amount || 0);
+        
+        if (withdrawal.status === 'completed') {
+          totalWithdrawn += amount;
+          releasedByAsaas += amount;
+        } else if (withdrawal.status === 'processing' || withdrawal.status === 'pending') {
+          processingWithdrawals += amount;
+        }
       });
+      
+      console.log('getFreelancerBalance: totalWithdrawn:', totalWithdrawn);
+      console.log('getFreelancerBalance: processingWithdrawals:', processingWithdrawals);
+      console.log('getFreelancerBalance: releasedByAsaas:', releasedByAsaas);
 
-      // Buscar liberações para calcular saldo disponível vs pendente
+      // Buscar liberações para calcular saldo disponível vs bloqueado
       const releasesQuery = query(
         collection(db, 'fundReleases'),
         where('freelancerId', '==', freelancerId),
@@ -798,7 +814,7 @@ export class FundsService {
       const releasesSnapshot = await getDocs(releasesQuery);
       
       let availableForWithdraw = 0;
-      let pendingForRelease = 0;
+      let blockedForRelease = 0;
       const now = new Date();
 
       for (const releaseDoc of releasesSnapshot.docs) {
@@ -809,7 +825,6 @@ export class FundsService {
         const projectPayment = await this.getProjectPayment(release.projectId);
         
         if (projectPayment) {
-          const paymentMethod = projectPayment.paymentMethod;
           const availableAt = projectPayment.availableAt;
           
           // Se tem data de disponibilidade, verificar se já passou
@@ -820,8 +835,8 @@ export class FundsService {
               // Já está disponível
               availableForWithdraw += releaseAmount;
             } else {
-              // Ainda pendente (aguardando prazo)
-              pendingForRelease += releaseAmount;
+              // Ainda bloqueado (aguardando prazo de 35 dias)
+              blockedForRelease += releaseAmount;
             }
           } else {
             // Sem data definida, considerar disponível (PIX ou legado)
@@ -847,42 +862,34 @@ export class FundsService {
         totalEarnings += proposal.proposedBudget || 0;
       });
 
-      // Calcular valores
+      // Calcular os 4 saldos principais
       const pendingAmount = totalEarnings - totalReleased; // Ainda não liberado
-      const availableBalance = Math.max(availableForWithdraw - totalWithdrawn, 0); // Disponível para saque
-      const pendingBalance = pendingForRelease; // Liberado mas bloqueado por prazo
+      const availableBalance = Math.max(availableForWithdraw - totalWithdrawn - processingWithdrawals, 0); // Disponível para saque
+      const blockedBalance = blockedForRelease; // Bloqueado (cartão de crédito - 35 dias)
+      const releasedBalance = releasedByAsaas; // Confirmado pelo Asaas
+      const processingBalance = processingWithdrawals; // Em processamento
 
       console.log('getFreelancerBalance: Resumo final:', {
         totalEarnings,
         totalReleased,
         totalWithdrawn,
+        processingWithdrawals,
         pendingAmount,
         availableBalance,
-        pendingBalance,
+        releasedBalance,
+        processingBalance,
+        blockedBalance,
       });
-
-      // Saques pendentes (se existirem)
-      let pendingWithdrawals = 0;
-      try {
-        const pendingWithdrawQuery = query(
-          collection(db, 'withdrawRequests'),
-          where('freelancerId', '==', freelancerId),
-          where('status', '==', 'pending')
-        );
-        const pendingSnap = await getDocs(pendingWithdrawQuery);
-        pendingSnap.forEach(doc => {
-          const wr = doc.data() as any;
-          pendingWithdrawals += Number(wr.amount || 0);
-        });
-      } catch {}
 
       const result = {
         totalEarnings,
         totalReleased,
         pendingAmount,
         availableBalance,
-        pendingBalance,
-        pendingWithdrawals
+        releasedBalance,
+        processingBalance,
+        blockedBalance,
+        pendingWithdrawals: processingWithdrawals
       };
       
       console.log('getFreelancerBalance: Retornando resultado:', result);
@@ -894,7 +901,9 @@ export class FundsService {
         totalReleased: 0,
         pendingAmount: 0,
         availableBalance: 0,
-        pendingBalance: 0,
+        releasedBalance: 0,
+        processingBalance: 0,
+        blockedBalance: 0,
         pendingWithdrawals: 0
       };
     }
@@ -945,9 +954,10 @@ export class FundsService {
           
           if (availableAt && availableAt.toDate) {
             const availableDate = availableAt.toDate();
+            const isFuture = now < availableDate;
             
             // Se ainda não está disponível
-            if (now < availableDate) {
+            if (isFuture) {
               pendingReleases.push({
                 projectId: release.projectId,
                 projectTitle: release.projectTitle || 'Projeto',
@@ -964,7 +974,6 @@ export class FundsService {
 
       // Ordenar por data de disponibilidade (mais próxima primeiro)
       pendingReleases.sort((a, b) => a.availableDateRaw - b.availableDateRaw);
-
       return pendingReleases;
     } catch (error) {
       console.error('Erro ao buscar liberações pendentes:', error);
@@ -988,19 +997,27 @@ export class FundsService {
 
     const recalcAndNotify = async () => {
       const totalReleased = Math.max(totalReleasedTx, totalReleasedRel);
-      // Buscar saques concluídos para subtrair do saldo disponível
+      // Buscar saques concluídos E pendentes para subtrair do saldo disponível
       let totalWithdrawn = 0;
+      let pendingWithdrawals = 0;
+      
       try {
         const withdrawTxQuery = query(
           collection(db, 'fundTransactions'),
           where('fromUserId', '==', freelancerId),
           where('type', '==', 'withdraw'),
-          where('status', '==', 'completed')
+          where('status', 'in', ['completed', 'pending'])
         );
         const withdrawSnapshot = await getDocs(withdrawTxQuery);
         withdrawSnapshot.forEach(doc => {
           const tx = doc.data();
-          totalWithdrawn += Number(tx.amount || 0);
+          const amount = Number(tx.amount || 0);
+          
+          if (tx.status === 'completed') {
+            totalWithdrawn += amount;
+          } else if (tx.status === 'pending') {
+            pendingWithdrawals += amount;
+          }
         });
       } catch {}
 
@@ -1019,22 +1036,9 @@ export class FundsService {
           totalEarnings += proposal.proposedBudget || 0;
         });
 
-        // Calcular valores pendentes (ganhos totais - liberado)
+        // Calcular valores pendentes - IMPORTANTE: descontar também saques pendentes
         const pendingAmount = totalEarnings - totalReleased;
-        const availableBalance = Math.max(totalReleased - totalWithdrawn, 0);
-        let pendingWithdrawals = 0;
-        try {
-          const pendingWithdrawQuery = query(
-            collection(db, 'withdrawRequests'),
-            where('freelancerId', '==', freelancerId),
-            where('status', '==', 'pending')
-          );
-          const pendingSnap = await getDocs(pendingWithdrawQuery);
-          pendingSnap.forEach(doc => {
-            const wr = doc.data() as any;
-            pendingWithdrawals += Number(wr.amount || 0);
-          });
-        } catch {}
+        const availableBalance = Math.max(totalReleased - totalWithdrawn - pendingWithdrawals, 0);
 
         callback({
           totalEarnings,

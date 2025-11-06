@@ -6,11 +6,9 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import cors from 'cors';
 import { 
-  createOrUpdateCustomer,
-  createTransfer,
-  type AsaasCustomer,
-  type AsaasTransfer,
-  cleanDocument
+  simulateAnticipation,
+  createAnticipation,
+  getAnticipationLimits
 } from './asaasService';
 
 // Inicializa o admin caso não esteja inicializado
@@ -54,6 +52,112 @@ async function isAuthenticated(req: functions.https.Request): Promise<{ uid: str
     return null;
   }
 }
+
+
+/**
+ * Firebase Function: Simular antecipação antes de solicitar
+ * POST /simulateAdvanceRequest
+ */
+export const simulateAdvanceRequest = functions.https.onRequest(async (req, res) => {
+  return corsHandler(req, res, async () => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Método não permitido' });
+      return;
+    }
+
+    try {
+      // Verificar autenticação
+      const user = await isAuthenticated(req);
+      if (!user) {
+        res.status(401).json({ error: 'Usuário não autenticado' });
+        return;
+      }
+
+      const { projectId } = req.body;
+
+      if (!projectId) {
+        res.status(400).json({ error: 'ID do projeto é obrigatório' });
+        return;
+      }
+
+      console.log('[Advance Simulation] Simulando antecipação para projeto:', projectId);
+
+      // Buscar pagamento do projeto
+      const paymentQuery = await db.collection('projectPayments')
+        .where('projectId', '==', projectId)
+        .where('freelancerId', '==', user.uid)
+        .limit(1)
+        .get();
+
+      if (paymentQuery.empty) {
+        res.status(404).json({ error: 'Pagamento do projeto não encontrado' });
+        return;
+      }
+
+      const paymentDoc = paymentQuery.docs[0].data();
+      
+      // Validar que é cartão de crédito
+      if (paymentDoc.paymentMethod !== 'CREDIT_CARD') {
+        res.status(400).json({ 
+          error: 'Antecipação disponível apenas para pagamentos em cartão de crédito' 
+        });
+        return;
+      }
+
+      // Validar que ainda está bloqueado
+      const now = new Date();
+      const availableAt = paymentDoc.availableAt?.toDate();
+      
+      if (!availableAt || availableAt <= now) {
+        res.status(400).json({ 
+          error: 'O valor já está disponível para saque' 
+        });
+        return;
+      }
+
+      const asaasPaymentId = paymentDoc.asaasPaymentId;
+
+      if (!asaasPaymentId) {
+        res.status(400).json({ 
+          error: 'ID do pagamento no Asaas não encontrado' 
+        });
+        return;
+      }
+
+      // Simular antecipação no Asaas
+      const simulation = await simulateAnticipation(asaasPaymentId);
+      
+      console.log('[Advance Simulation] Resultado:', simulation);
+
+      res.status(200).json({
+        success: true,
+        asaasPaymentId,
+        value: simulation.value,
+        netValue: simulation.netValue,
+        fee: simulation.fee,
+        feePercentage: ((simulation.fee / simulation.value) * 100).toFixed(2),
+        isDocumentationRequired: simulation.isDocumentationRequired,
+        message: 'Simulação realizada com sucesso'
+      });
+
+    } catch (error) {
+      console.error('[Advance Simulation] Erro:', error);
+      res.status(500).json({
+        error: 'Erro ao simular antecipação',
+        details: error instanceof Error ? error.message : 'Erro desconhecido'
+      });
+    }
+  });
+});
 
 /**
  * Firebase Function: Processar solicitação de adiantamento
@@ -108,75 +212,124 @@ export const processAdvanceRequest = functions.https.onRequest(async (req, res) 
         return;
       }
 
-      // Buscar dados do freelancer
-      const freelancerDoc = await db.collection('users').doc(advance.freelancerId).get();
-      if (!freelancerDoc.exists) {
-        res.status(404).json({ error: 'Freelancer não encontrado' });
+      // Validar que o pagamento é de cartão de crédito e ainda está bloqueado
+      const projectPaymentQuery = await db.collection('projectPayments')
+        .where('projectId', '==', advance.projectId)
+        .where('freelancerId', '==', advance.freelancerId)
+        .limit(1)
+        .get();
+
+      if (projectPaymentQuery.empty) {
+        res.status(404).json({ error: 'Pagamento do projeto não encontrado' });
         return;
       }
 
-      const freelancerData = freelancerDoc.data();
+      const projectPayment = projectPaymentQuery.docs[0].data();
 
-      // Criar ou atualizar cliente no Asaas
-      const cpfCnpj = cleanDocument(freelancerData?.document || '');
-      const validCpf = cpfCnpj && cpfCnpj.length === 11 ? cpfCnpj : '24971563792'; // CPF de teste
-
-      const customerAsaas: AsaasCustomer = {
-        name: freelancerData?.name || freelancerData?.displayName || 'Freelancer',
-        email: freelancerData?.email || `${advance.freelancerId}@xjobs.app`,
-        cpfCnpj: validCpf,
-        phone: cleanDocument(freelancerData?.phone || '11999999999'),
-        mobilePhone: cleanDocument(freelancerData?.phone || '11999999999'),
-        externalReference: advance.freelancerId,
-        notificationDisabled: false,
-      };
-
-      const customer = await createOrUpdateCustomer(customerAsaas);
-      console.log('[Advance] Cliente Asaas criado/atualizado:', customer.id);
-
-      // Buscar chave PIX do freelancer (se disponível)
-      let pixKey = freelancerData?.pixKey;
-      
-      // Se não tiver PIX, usar email como fallback
-      if (!pixKey) {
-        pixKey = freelancerData?.email;
+      // Validar que é pagamento em cartão de crédito
+      if (projectPayment.paymentMethod !== 'CREDIT_CARD') {
+        res.status(400).json({ 
+          error: 'Adiantamento disponível apenas para pagamentos em cartão de crédito' 
+        });
+        return;
       }
 
-      if (!pixKey) {
+      // Validar que o valor ainda está bloqueado
+      const now = new Date();
+      const availableAt = projectPayment.availableAt?.toDate();
+      
+      if (!availableAt || availableAt <= now) {
+        res.status(400).json({ 
+          error: 'O valor já está disponível para saque, não é necessário adiantamento' 
+        });
+        return;
+      }
+
+      // Buscar o asaasPaymentId do pagamento do projeto
+      const paymentQuery = await db.collection('projectPayments')
+        .where('projectId', '==', advance.projectId)
+        .where('freelancerId', '==', advance.freelancerId)
+        .limit(1)
+        .get();
+
+      if (paymentQuery.empty) {
+        res.status(404).json({ error: 'Pagamento do projeto não encontrado' });
+        return;
+      }
+
+      const paymentDoc = paymentQuery.docs[0].data();
+      const asaasPaymentId = paymentDoc.asaasPaymentId;
+
+      if (!asaasPaymentId) {
+        res.status(400).json({ 
+          error: 'ID do pagamento no Asaas não encontrado. Verifique se o pagamento foi processado corretamente.' 
+        });
+        return;
+      }
+
+      console.log('[Advance] asaasPaymentId encontrado:', asaasPaymentId);
+
+      // Buscar limites de antecipação disponíveis
+      try {
+        const limits = await getAnticipationLimits();
+        console.log('[Advance] Limites de antecipação:', limits);
+        
+        if (limits.creditCardLimit <= 0) {
+          res.status(400).json({ 
+            error: 'Não há limite disponível para antecipação no momento' 
+          });
+          return;
+        }
+      } catch (error) {
+        console.error('[Advance] Erro ao buscar limites:', error);
+        // Continua mesmo sem verificar limites
+      }
+
+      // Simular a antecipação para obter o valor real da taxa do Asaas
+      console.log('[Advance] Simulando antecipação...');
+      const simulation = await simulateAnticipation(asaasPaymentId);
+      
+      console.log('[Advance] Simulação:', {
+        value: simulation.value,
+        netValue: simulation.netValue,
+        fee: simulation.fee,
+        isDocumentationRequired: simulation.isDocumentationRequired
+      });
+
+      // Verificar se documentação é necessária
+      if (simulation.isDocumentationRequired) {
         await advanceRef.update({
           status: 'rejected',
-          rejectionReason: 'Freelancer sem chave PIX configurada',
+          rejectionReason: 'Documentação adicional necessária para antecipação',
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
 
         res.status(400).json({ 
-          error: 'Freelancer precisa configurar chave PIX para receber adiantamento' 
+          error: 'Documentação adicional é necessária para este tipo de antecipação' 
         });
         return;
       }
 
-      // Criar transferência no Asaas via PIX
-      const transferAsaas: AsaasTransfer = {
-        value: advance.netAmount, // Valor líquido (já descontada a taxa)
-        operationType: 'PIX',
-        pixAddressKey: pixKey,
-        pixAddressKeyType: pixKey.includes('@') ? 'EMAIL' : 
-                          pixKey.length === 11 ? 'CPF' : 
-                          pixKey.length === 14 ? 'CNPJ' : 'EVP',
-        description: `Adiantamento - ${advance.projectTitle}`,
-        externalReference: `advance_${advance.id}`
-      };
-
-      console.log('[Advance] Criando transferência Asaas:', transferAsaas);
-
-      const transfer = await createTransfer(transferAsaas);
-      console.log('[Advance] Transferência criada:', transfer.id);
+      // Solicitar a antecipação no Asaas
+      console.log('[Advance] Solicitando antecipação no Asaas...');
+      const anticipation = await createAnticipation(asaasPaymentId);
+      
+      console.log('[Advance] Antecipação criada:', {
+        id: anticipation.id,
+        status: anticipation.status,
+        value: anticipation.value,
+        netValue: anticipation.netValue,
+        fee: anticipation.fee
+      });
 
       // Atualizar status do adiantamento
       await advanceRef.update({
         status: 'processed',
-        transferId: transfer.id,
-        transferStatus: transfer.status,
+        asaasAnticipationId: anticipation.id,
+        anticipationStatus: anticipation.status,
+        asaasValue: anticipation.value,
+        asaasNetValue: anticipation.netValue,
+        asaasFee: anticipation.fee,
         processedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
@@ -187,26 +340,26 @@ export const processAdvanceRequest = functions.https.onRequest(async (req, res) 
         freelancerId: advance.freelancerId,
         projectId: advance.projectId,
         type: 'advance_payment',
-        amount: advance.netAmount,
-        description: `Adiantamento de R$ ${advance.requestedAmount.toFixed(2)} (taxa: R$ ${advance.feeAmount.toFixed(2)})`,
-        status: transfer.status === 'PENDING' ? 'pending' : 'completed',
+        amount: anticipation.netValue,
+        description: `Antecipação Asaas - Valor: R$ ${anticipation.value.toFixed(2)} | Taxa Asaas: R$ ${anticipation.fee.toFixed(2)}`,
+        status: anticipation.status === 'PENDING' ? 'pending' : 'completed',
         gateway: 'asaas',
-        transferId: transfer.id,
-        gatewayResponse: transfer,
+        asaasAnticipationId: anticipation.id,
+        gatewayResponse: anticipation,
         processedAt: admin.firestore.FieldValue.serverTimestamp(),
         createdAt: admin.firestore.FieldValue.serverTimestamp()
       };
 
       await db.collection('advanceTransactions').add(advanceTransaction);
 
-      // Criar transação da taxa
+      // Criar transação da taxa Asaas
       const feeTransaction = {
         advanceRequestId: advanceId,
         freelancerId: advance.freelancerId,
         projectId: advance.projectId,
-        type: 'advance_fee',
-        amount: advance.feeAmount,
-        description: `Taxa de adiantamento (${advance.feePercentage}%)`,
+        type: 'anticipation_fee',
+        amount: anticipation.fee,
+        description: `Taxa de antecipação Asaas`,
         status: 'completed',
         gateway: 'asaas',
         processedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -235,8 +388,8 @@ export const processAdvanceRequest = functions.https.onRequest(async (req, res) 
       const updatedStats = {
         ...stats,
         totalAdvancesApproved: (stats?.totalAdvancesApproved || 0) + 1,
-        totalAmountAdvanced: (stats?.totalAmountAdvanced || 0) + advance.requestedAmount,
-        totalFeesCharged: (stats?.totalFeesCharged || 0) + advance.feeAmount,
+        totalAmountAdvanced: (stats?.totalAmountAdvanced || 0) + anticipation.value,
+        totalFeesCharged: (stats?.totalFeesCharged || 0) + anticipation.fee,
         hasActiveAdvance: false, // Processado, não está mais ativo
         lastAdvanceDate: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -244,16 +397,17 @@ export const processAdvanceRequest = functions.https.onRequest(async (req, res) 
 
       await statsRef.set(updatedStats);
 
-      console.log('[Advance] Adiantamento processado com sucesso');
+      console.log('[Advance] Antecipação processada com sucesso');
 
       res.status(200).json({
         success: true,
         advanceId,
-        transferId: transfer.id,
-        netAmount: advance.netAmount,
-        feeAmount: advance.feeAmount,
-        transferStatus: transfer.status,
-        message: 'Adiantamento processado com sucesso'
+        asaasAnticipationId: anticipation.id,
+        anticipationStatus: anticipation.status,
+        value: anticipation.value,
+        netValue: anticipation.netValue,
+        asaasFee: anticipation.fee,
+        message: 'Antecipação solicitada com sucesso no Asaas'
       });
 
     } catch (error) {

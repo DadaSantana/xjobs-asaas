@@ -54,6 +54,7 @@ export {
 
 // Funções do sistema de adiantamento
 export {
+  simulateAdvanceRequest,
   processAdvanceRequest,
   listAdvanceRequests,
   approveAdvanceRequest,
@@ -64,6 +65,11 @@ export {
 export {
   processWithdrawalAsaas
 } from './withdrawalService';
+
+// Webhook Asaas para transferências
+export {
+  asaasWebhook as asaasTransferWebhook
+} from './asaasWebhook';
 
 export {
   createRecipient,
