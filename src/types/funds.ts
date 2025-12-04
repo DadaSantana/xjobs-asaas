@@ -60,7 +60,7 @@ export interface FundTransaction {
   id: string;
   projectId: string;
   releaseId?: string;
-  type: 'hold' | 'release' | 'refund' | 'fee' | 'penalty' | 'withdraw';
+  type: 'hold' | 'release' | 'refund' | 'fee' | 'penalty' | 'withdraw' | 'advance_payment' | 'anticipation_fee' | 'withdrawal_completed' | 'withdrawal_reversal';
   amount: number;
   description: string;
   fromUserId?: string;
@@ -83,7 +83,11 @@ export interface FundTransaction {
   
   // Campos específicos do Asaas para transferências
   asaasTransferId?: string; // ID da transferência no Asaas
+  asaasAnticipationId?: string; // ID da antecipação no Asaas
   pixKey?: string; // Chave PIX usada (se aplicável)
+  
+  // Informação de adiantamento
+  advanceRequestId?: string; // ID da solicitação de adiantamento
   
   createdAt: Timestamp;
 }

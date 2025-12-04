@@ -321,7 +321,7 @@ firebase deploy --only functions:asaasWebhook,functions:createAsaasCheckout,func
 **URLs das Funções**:
 - createAsaasCheckout: https://createasaascheckout-bo5fg4zxxq-uc.a.run.app
 - createAsaasSubscription: https://createasaassubscription-bo5fg4zxxq-uc.a.run.app
-- asaasWebhook: https://asaaswebhook-bo5fg4zxxq-uc.a.run.app
+- asaasWebhook: https://us-central1-xjobs-a43d2.cloudfunctions.net/asaasWebhook
 
 ## 📝 Notas Importantes
 

@@ -554,71 +554,26 @@ const MinhasFinancas = () => {
             <div className="space-y-3 md:space-y-0">
               {/* Mobile Layout */}
               <div className="block md:hidden space-y-3">
-                {transactions.map((tx) => (
-                  <div key={tx.id} className="border rounded-lg p-3 space-y-2">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="font-medium text-sm">{tx.projectTitle || tx.projectId || 'Projeto'}</div>
-                        <div className="text-xs text-gray-500">
-                          {tx.releaseType === 'partial' ? `${tx.percentage || 0}%` : '100%'}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-semibold text-sm">{formatCurrency(tx.amount || 0)}</div>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                          tx.status === 'completed' 
-                            ? 'bg-green-100 text-green-800' 
-                            : tx.status === 'pending'
-                            ? 'bg-yellow-100 text-yellow-800'
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {tx.status === 'completed' ? 'Concluído' : 
-                           tx.status === 'pending' ? 'Pendente' : 
-                           tx.status === 'failed' ? 'Falhou' : 
-                           tx.status === 'cancelled' ? 'Cancelado' : tx.status}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex justify-between text-xs text-gray-500">
-                      <span>Cliente: {tx.clientName || 'Cliente'}</span>
-                      <span>{tx.createdAt?.toDate ? format(tx.createdAt.toDate(), "dd/MM/yyyy", { locale: ptBR }) : '-'}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              
-              {/* Desktop Table */}
-              <div className="hidden md:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Data</TableHead>
-                      <TableHead>Projeto</TableHead>
-                      <TableHead>Cliente</TableHead>
-                      <TableHead>Valor</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {transactions.map((tx) => (
-                      <TableRow key={tx.id}>
-                        <TableCell className="font-medium">
-                          {tx.createdAt?.toDate ? format(tx.createdAt.toDate(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }) : '-'}
-                        </TableCell>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">{tx.projectTitle || tx.projectId || 'Projeto'}</div>
-                            <div className="text-sm text-gray-500">
-                              {tx.releaseType === 'partial' ? `${tx.percentage || 0}%` : '100%'}
-                            </div>
+                {transactions.map((tx) => {
+                  const isAdvance = tx.type === 'advance_payment';
+                  const isAdvanceFee = tx.type === 'anticipation_fee';
+                  return (
+                    <div key={tx.id} className="border rounded-lg p-3 space-y-2">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="font-medium text-sm">{tx.projectTitle || tx.projectId || 'Projeto'}</div>
+                          <div className="text-xs text-gray-500">
+                            {isAdvance && '⚡ Adiantamento'}
+                            {isAdvanceFee && '💳 Taxa de Adiantamento'}
+                            {!isAdvance && !isAdvanceFee && (tx.releaseType === 'partial' ? `${tx.percentage || 0}%` : '100%')}
                           </div>
-                        </TableCell>
-                        <TableCell>{tx.clientName || 'Cliente'}</TableCell>
-                        <TableCell className="font-semibold">
-                          {formatCurrency(tx.amount || 0)}
-                        </TableCell>
-                        <TableCell>
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        </div>
+                        <div className="text-right">
+                          <div className={`font-semibold text-sm ${isAdvanceFee ? 'text-red-600' : ''}`}>
+                            {isAdvanceFee && '- '}
+                            {formatCurrency(tx.amount || 0)}
+                          </div>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                             tx.status === 'completed' 
                               ? 'bg-green-100 text-green-800' 
                               : tx.status === 'pending'
@@ -630,9 +585,74 @@ const MinhasFinancas = () => {
                              tx.status === 'failed' ? 'Falhou' : 
                              tx.status === 'cancelled' ? 'Cancelado' : tx.status}
                           </span>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                        </div>
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-500">
+                        <span>{isAdvance || isAdvanceFee ? 'Via Asaas' : `Cliente: ${tx.clientName || 'Cliente'}`}</span>
+                        <span>{tx.createdAt?.toDate ? format(tx.createdAt.toDate(), "dd/MM/yyyy", { locale: ptBR }) : '-'}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              
+              {/* Desktop Table */}
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Data</TableHead>
+                      <TableHead>Projeto</TableHead>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead>Valor</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {transactions.map((tx) => {
+                      const isAdvance = tx.type === 'advance_payment';
+                      const isAdvanceFee = tx.type === 'anticipation_fee';
+                      return (
+                        <TableRow key={tx.id}>
+                          <TableCell className="font-medium">
+                            {tx.createdAt?.toDate ? format(tx.createdAt.toDate(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }) : '-'}
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{tx.projectTitle || tx.projectId || 'Projeto'}</div>
+                              <div className="text-sm text-gray-500">
+                                {isAdvance && '⚡ Adiantamento (Asaas)'}
+                                {isAdvanceFee && '💳 Taxa de Adiantamento (2%)'}
+                                {!isAdvance && !isAdvanceFee && (tx.releaseType === 'partial' ? `Liberação ${tx.percentage || 0}%` : 'Liberação 100%')}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {isAdvance && <Badge variant="outline" className="bg-blue-50 text-blue-700">Adiantamento</Badge>}
+                            {isAdvanceFee && <Badge variant="outline" className="bg-red-50 text-red-700">Taxa</Badge>}
+                            {!isAdvance && !isAdvanceFee && <Badge variant="outline" className="bg-green-50 text-green-700">Liberação</Badge>}
+                          </TableCell>
+                          <TableCell className={`font-semibold ${isAdvanceFee ? 'text-red-600' : ''}`}>
+                            {isAdvanceFee && '- '}
+                            {formatCurrency(tx.amount || 0)}
+                          </TableCell>
+                          <TableCell>
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              tx.status === 'completed' 
+                                ? 'bg-green-100 text-green-800' 
+                                : tx.status === 'pending'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              {tx.status === 'completed' ? 'Concluído' : 
+                               tx.status === 'pending' ? 'Pendente' : 
+                               tx.status === 'failed' ? 'Falhou' : 
+                               tx.status === 'cancelled' ? 'Cancelado' : tx.status}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>

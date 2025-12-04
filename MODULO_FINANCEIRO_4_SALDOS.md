@@ -98,7 +98,7 @@ Action: Adiciona ao "Saldo Disponível"
 ## 🔗 Webhooks Configurados
 
 ### Webhook de Transferências (Saques)
-**URL**: `https://asaaswebhook-bo5fg4zxxq-uc.a.run.app`
+**URL**: `https://us-central1-xjobs-a43d2.cloudfunctions.net/asaasWebhook`
 
 **Eventos:**
 - `TRANSFER_CREATED`
@@ -109,7 +109,7 @@ Action: Adiciona ao "Saldo Disponível"
 - `TRANSFER_CANCELLED`
 
 ### Webhook de Antecipações (Adiantamentos)
-**URL**: `https://asaaswebhook-bo5fg4zxxq-uc.a.run.app` (mesmo endpoint)
+**URL**: `https://us-central1-xjobs-a43d2.cloudfunctions.net/asaasWebhook` (mesmo endpoint)
 
 **Eventos:**
 - `ANTICIPATION_PENDING`
@@ -185,8 +185,8 @@ Action: Adiciona ao "Saldo Disponível"
 ## 🎯 Pontos de Atenção
 
 ### 1. Webhook do Asaas
-- **IMPORTANTE**: Configure o webhook no painel do Asaas apontando para `https://asaaswebhook-bo5fg4zxxq-uc.a.run.app`
-- Habilite os eventos de `TRANSFER_*` e `ANTICIPATION_*`
+- **IMPORTANTE**: Configure o webhook no painel do Asaas apontando para `https://us-central1-xjobs-a43d2.cloudfunctions.net/asaasWebhook`
+- Habilite os eventos de `TRANSFER_*` e `RECEIVABLE_ANTICIPATION_*`
 
 ### 2. Sincronização de Status
 - Todos os status devem ser atualizados APENAS via webhook

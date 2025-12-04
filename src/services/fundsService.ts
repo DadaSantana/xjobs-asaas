@@ -817,12 +817,35 @@ export class FundsService {
       let blockedForRelease = 0;
       const now = new Date();
 
+      // Buscar adiantamentos aprovados para subtrair do bloqueado
+      const advancesQuery = query(
+        collection(db, 'advanceRequests'),
+        where('freelancerId', '==', freelancerId),
+        where('status', 'in', ['approved', 'processing', 'completed'])
+      );
+      const advancesSnapshot = await getDocs(advancesQuery);
+      const advancedAmountsByProject = new Map<string, number>();
+      
+      advancesSnapshot.forEach(doc => {
+        const advance = doc.data();
+        const projectId = advance.projectId;
+        const requestedAmount = Number(advance.requestedAmount || 0);
+        
+        if (!advancedAmountsByProject.has(projectId)) {
+          advancedAmountsByProject.set(projectId, 0);
+        }
+        advancedAmountsByProject.set(projectId, advancedAmountsByProject.get(projectId)! + requestedAmount);
+      });
+      
+      console.log('getFreelancerBalance: Adiantamentos encontrados por projeto:', Object.fromEntries(advancedAmountsByProject));
+
       for (const releaseDoc of releasesSnapshot.docs) {
         const release = releaseDoc.data();
         const releaseAmount = Number(release.amount || 0);
+        const projectId = release.projectId;
         
         // Buscar dados do pagamento original para verificar método e data
-        const projectPayment = await this.getProjectPayment(release.projectId);
+        const projectPayment = await this.getProjectPayment(projectId);
         
         if (projectPayment) {
           const availableAt = projectPayment.availableAt;
@@ -836,7 +859,15 @@ export class FundsService {
               availableForWithdraw += releaseAmount;
             } else {
               // Ainda bloqueado (aguardando prazo de 35 dias)
-              blockedForRelease += releaseAmount;
+              // Subtrair adiantamentos já solicitados deste projeto
+              const advancedAmount = advancedAmountsByProject.get(projectId) || 0;
+              const remainingBlocked = Math.max(releaseAmount - advancedAmount, 0);
+              blockedForRelease += remainingBlocked;
+              
+              // Se houve adiantamento, adicionar ao disponível
+              if (advancedAmount > 0) {
+                availableForWithdraw += Math.min(advancedAmount, releaseAmount);
+              }
             }
           } else {
             // Sem data definida, considerar disponível (PIX ou legado)
@@ -939,15 +970,38 @@ export class FundsService {
       );
       const releasesSnapshot = await getDocs(releasesQuery);
       
+      // Buscar adiantamentos já solicitados (para filtrar projetos)
+      const advancesQuery = query(
+        collection(db, 'advanceRequests'),
+        where('freelancerId', '==', freelancerId),
+        where('status', 'in', ['pending', 'approved', 'processed', 'completed'])
+      );
+      const advancesSnapshot = await getDocs(advancesQuery);
+      const projectsWithAdvances = new Set<string>();
+      
+      advancesSnapshot.forEach(doc => {
+        const advance = doc.data();
+        projectsWithAdvances.add(advance.projectId);
+      });
+      
+      console.log('getPendingReleases: Projetos com adiantamentos já solicitados:', Array.from(projectsWithAdvances));
+      
       const now = new Date();
       const pendingReleases = [];
 
       for (const releaseDoc of releasesSnapshot.docs) {
         const release = releaseDoc.data();
         const releaseAmount = Number(release.amount || 0);
+        const projectId = release.projectId;
+        
+        // Pular se já tem adiantamento para este projeto
+        if (projectsWithAdvances.has(projectId)) {
+          console.log(`getPendingReleases: Pulando projeto ${projectId} - já tem adiantamento`);
+          continue;
+        }
         
         // Buscar dados do pagamento original
-        const projectPayment = await this.getProjectPayment(release.projectId);
+        const projectPayment = await this.getProjectPayment(projectId);
         
         if (projectPayment && projectPayment.availableAt) {
           const availableAt = projectPayment.availableAt;
@@ -959,7 +1013,7 @@ export class FundsService {
             // Se ainda não está disponível
             if (isFuture) {
               pendingReleases.push({
-                projectId: release.projectId,
+                projectId: projectId,
                 projectTitle: release.projectTitle || 'Projeto',
                 amount: releaseAmount,
                 paymentMethod: projectPayment.paymentMethod || 'UNDEFINED',
@@ -974,6 +1028,8 @@ export class FundsService {
 
       // Ordenar por data de disponibilidade (mais próxima primeiro)
       pendingReleases.sort((a, b) => a.availableDateRaw - b.availableDateRaw);
+      
+      console.log(`getPendingReleases: Retornando ${pendingReleases.length} liberações pendentes (após filtrar adiantamentos)`);
       return pendingReleases;
     } catch (error) {
       console.error('Erro ao buscar liberações pendentes:', error);

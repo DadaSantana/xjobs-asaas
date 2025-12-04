@@ -15,34 +15,27 @@
 //   response.send("Hello from Firebase!");
 // });
 
+// Funções de liberação de fundos (mantidas do pagarmePlans.ts)
 export {
-  createPlan,
-  editPlan,
-  deletePlan,
-  listPlans,
-  savePlanLimits,
-  createPaymentLink,
-  createPlanPaymentLink,
-  generateProjectPaymentLink,
-  generateExternalPaymentLink,
-  generatePlanSubscriptionPaymentLink,
-  checkPaymentLinkStatus,
-  processOrderPayment,
-  paymentWebhook,
-  pagarmeWebhook,
   onFundReleaseCreate,
-  processFundRelease,
-  requestWithdrawNow
+  processFundRelease
 } from './pagarmePlans';
+// requestWithdrawNow - REMOVIDA (substituída por processWithdrawalAsaas)
+
+// Funções do Pagarme removidas - sistema antigo descontinuado
+// createPlan, editPlan, deletePlan, listPlans, savePlanLimits
+// createPaymentLink, createPlanPaymentLink, generateProjectPaymentLink
+// generateExternalPaymentLink, generatePlanSubscriptionPaymentLink
+// checkPaymentLinkStatus, processOrderPayment, paymentWebhook, pagarmeWebhook
 
 // Funções do Asaas (novo gateway de pagamento)
 export {
   createAsaasCheckout,
   createAsaasSubscription,
   asaasWebhook,
-  checkAsaasPaymentStatus,
-  transferToFreelancerAsaas
+  checkAsaasPaymentStatus
 } from './asaasPlans';
+// transferToFreelancerAsaas - REMOVIDA (não utilizada)
 
 // Funções de gerenciamento de planos Asaas
 export {
@@ -66,10 +59,8 @@ export {
   processWithdrawalAsaas
 } from './withdrawalService';
 
-// Webhook Asaas para transferências
-export {
-  asaasWebhook as asaasTransferWebhook
-} from './asaasWebhook';
+// Webhook Asaas para transferências - já exportado acima como asaasWebhook
+// asaasTransferWebhook - REMOVIDA (era apenas alias de asaasWebhook)
 
 export {
   createRecipient,
