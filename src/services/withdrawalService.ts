@@ -21,7 +21,7 @@ export async function processWithdrawalAsaas(amount: number): Promise<{
   try {
     const token = await user.getIdToken();
     const response = await fetch(
-      'https://processwithdrawalasaas-bo5fg4zxxq-uc.a.run.app',
+      'https://us-central1-xjobs-a43d2.cloudfunctions.net/processWithdrawalAsaas',
       {
         method: 'POST',
         headers: {

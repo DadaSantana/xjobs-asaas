@@ -275,7 +275,7 @@ export default function FreelancerSidebar({ onRequestRecipientSetup }: Freelance
                           const { auth } = await import('@/lib/firebase');
                           const token = await auth.currentUser?.getIdToken();
                           if (!token) return;
-                          const resp = await fetch('https://processwithdrawalasaas-bo5fg4zxxq-uc.a.run.app', {
+                          const resp = await fetch('https://us-central1-xjobs-a43d2.cloudfunctions.net/processWithdrawalAsaas', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                             body: JSON.stringify({ amount: balance.availableBalance })

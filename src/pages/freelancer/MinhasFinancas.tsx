@@ -131,7 +131,7 @@ const MinhasFinancas = () => {
       
       toast({ title: 'Processando...', description: 'Solicitando transferência via PIX (Asaas). Taxa de R$ 2,00 será descontada.' });
       
-      const response = await fetch('https://processwithdrawalasaas-bo5fg4zxxq-uc.a.run.app', {
+      const response = await fetch('https://us-central1-xjobs-a43d2.cloudfunctions.net/processWithdrawalAsaas', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
