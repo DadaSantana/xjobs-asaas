@@ -12,7 +12,8 @@ import {
   MessageCircle,
   ExternalLink,
   CheckCircle,
-  Crown
+  Crown,
+  Loader2
 } from 'lucide-react';
 import { ProjectLike } from '@/types/project';
 import { ProjectLikesService } from '@/services/projectLikesService';
@@ -45,6 +46,7 @@ export const ProjectLikesDisplay: React.FC<ProjectLikesDisplayProps> = ({
   const [loading, setLoading] = useState(true);
   const [selectedLike, setSelectedLike] = useState<ProjectLike | null>(null);
   const [freelancerPlans, setFreelancerPlans] = useState<Record<string, string>>({});
+  const [processingLikeId, setProcessingLikeId] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -102,6 +104,7 @@ export const ProjectLikesDisplay: React.FC<ProjectLikesDisplayProps> = ({
   };
 
   const handleAcceptProposal = async (like: ProjectLike) => {
+    setProcessingLikeId(like.id);
     try {
       // Buscar dados do projeto
       const projectDoc = await getDoc(doc(db, 'projects', projectId));
@@ -128,6 +131,7 @@ export const ProjectLikesDisplay: React.FC<ProjectLikesDisplayProps> = ({
           description: 'Configure seus dados de pagamento antes de aceitar propostas.',
           variant: 'destructive',
         });
+        setSelectedLike(null);
         return;
       }
 
@@ -175,6 +179,9 @@ export const ProjectLikesDisplay: React.FC<ProjectLikesDisplayProps> = ({
         onAcceptProposal(like.id, like.freelancerId);
       }
       
+      // Fechar o diálogo antes de redirecionar
+      setSelectedLike(null);
+      
       // Se tem URL de invoice (cartão), abrir em nova aba
       if (checkoutData.invoiceUrl) {
         window.open(checkoutData.invoiceUrl, '_blank');
@@ -199,6 +206,9 @@ export const ProjectLikesDisplay: React.FC<ProjectLikesDisplayProps> = ({
         description: error instanceof Error ? error.message : 'Falha ao aceitar proposta',
         variant: "destructive"
       });
+      setSelectedLike(null);
+    } finally {
+      setProcessingLikeId(null);
     }
   };
 
@@ -407,16 +417,22 @@ export const ProjectLikesDisplay: React.FC<ProjectLikesDisplayProps> = ({
                               <Button
                                 variant="outline"
                                 onClick={() => setSelectedLike(null)}
+                                disabled={processingLikeId === like.id}
                               >
                                 Cancelar
                               </Button>
                               <Button
-                                onClick={() => {
-                                  handleAcceptProposal(like);
-                                  setSelectedLike(null);
-                                }}
+                                onClick={() => handleAcceptProposal(like)}
+                                disabled={processingLikeId === like.id}
                               >
-                                Confirmar e Pagar
+                                {processingLikeId === like.id ? (
+                                  <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Gerando link de pagamento...
+                                  </>
+                                ) : (
+                                  'Confirmar e Pagar'
+                                )}
                               </Button>
                             </div>
                           </div>

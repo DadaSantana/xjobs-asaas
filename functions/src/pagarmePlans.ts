@@ -1,4 +1,4 @@
-import * as functions from 'firebase-functions';
+import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import { firestore as v2firestore } from 'firebase-functions/v2';
 import fetch from 'node-fetch';
@@ -90,6 +90,11 @@ async function isAdmin(req: functions.https.Request) {
   }
 }
 
+// ============================================
+// FUNÇÕES ANTIGAS DO PAGARME - DESCONTINUADAS
+// Estas funções foram comentadas para reduzir uso de CPU
+// ============================================
+/*
 export const createPlan = functions.https.onRequest((req, res) => {
   corsHandler(req, res, async () => {
     if (req.method !== 'POST') {
@@ -126,7 +131,13 @@ export const createPlan = functions.https.onRequest((req, res) => {
     }
   });
 });
+*/
 
+// ============================================
+// FIM DAS FUNÇÕES ANTIGAS DO PAGARME
+// ============================================
+
+/*
 export const editPlan = functions.https.onRequest((req, res) => {
   corsHandler(req, res, async () => {
     if (req.method !== 'PUT') {

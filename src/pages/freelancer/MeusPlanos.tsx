@@ -94,10 +94,19 @@ const MeusPlanos = () => {
                       <span className="text-sm font-medium">Curtidas</span>
                     </div>
                     <span className="text-sm text-gray-600">
-                      {currentPlan.likesUsed}/{currentPlan.likes}
+                      {currentPlan.likesUsed}/{typeof currentPlan.likes === "number" ? currentPlan.likes : "∞"}
                     </span>
                   </div>
-                  <Progress value={likesProgress} className="h-2" />
+                  {typeof currentPlan.likes === "number" ? (
+                    <Progress value={likesProgress} className="h-2" />
+                  ) : (
+                    <div className="text-xs text-green-600 font-medium">Ilimitadas</div>
+                  )}
+                  {typeof currentPlan.likes === "number" && currentPlan.likesUsed >= currentPlan.likes && (
+                    <div className="text-xs text-red-600 font-medium mt-1">
+                      Limite atingido. Renovação no próximo mês.
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -107,10 +116,29 @@ const MeusPlanos = () => {
                       <span className="text-sm font-medium">Mensagens</span>
                     </div>
                     <span className="text-sm text-gray-600">
-                      {currentPlan.messagesUsed}/{currentPlan.messages}
+                      {typeof currentPlan.messages === "number" 
+                        ? `${currentPlan.messagesUsed}/${currentPlan.messages}`
+                        : currentPlan.messages === "1 por projeto"
+                        ? "1 por projeto"
+                        : "Ilimitadas"}
                     </span>
                   </div>
-                  <Progress value={messagesProgress} className="h-2" />
+                  {typeof currentPlan.messages === "number" ? (
+                    <>
+                      <Progress value={messagesProgress} className="h-2" />
+                      {currentPlan.messagesUsed >= currentPlan.messages && (
+                        <div className="text-xs text-red-600 font-medium mt-1">
+                          Limite atingido. Renovação no próximo mês.
+                        </div>
+                      )}
+                    </>
+                  ) : currentPlan.messages === "1 por projeto" ? (
+                    <div className="text-xs text-gray-600 mt-1">
+                      Você pode enviar 1 mensagem por projeto
+                    </div>
+                  ) : (
+                    <div className="text-xs text-green-600 font-medium">Ilimitadas</div>
+                  )}
                 </div>
               </div>
             </div>

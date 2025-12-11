@@ -400,7 +400,7 @@ const MinhasFinancas = () => {
               {/* Card 3: Processando (saques em processamento) */}
               <div className="text-center p-3 md:p-4 bg-yellow-50 rounded-lg border-2 border-yellow-200">
                 <div className="text-xs md:text-sm text-gray-600 font-semibold">Processando</div>
-                <div className="text-xs text-gray-500 mb-1">⏳ Saque solicitado</div>
+                <div className="text-xs text-gray-500 mb-1">⏳ Adiantamento/Saque solicitado</div>
                 <div className="text-lg md:text-2xl font-bold text-yellow-700">{formatCurrency(summary.processingBalance)}</div>
               </div>
               
@@ -581,7 +581,7 @@ const MinhasFinancas = () => {
                               : 'bg-red-100 text-red-800'
                           }`}>
                             {tx.status === 'completed' ? 'Concluído' : 
-                             tx.status === 'pending' ? 'Pendente' : 
+                             tx.status === 'pending' ? (isAdvance ? 'Em processamento' : 'Pendente') : 
                              tx.status === 'failed' ? 'Falhou' : 
                              tx.status === 'cancelled' ? 'Cancelado' : tx.status}
                           </span>
@@ -645,7 +645,7 @@ const MinhasFinancas = () => {
                                 : 'bg-red-100 text-red-800'
                             }`}>
                               {tx.status === 'completed' ? 'Concluído' : 
-                               tx.status === 'pending' ? 'Pendente' : 
+                               tx.status === 'pending' ? (isAdvance ? 'Aguardando aprovação' : 'Pendente') : 
                                tx.status === 'failed' ? 'Falhou' : 
                                tx.status === 'cancelled' ? 'Cancelado' : tx.status}
                             </span>

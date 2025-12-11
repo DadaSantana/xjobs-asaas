@@ -146,13 +146,13 @@ const PlansSection = ({ showAsSection = true, currentPlan, onSelectPlan, isLandi
     const badge = plan.cardStyle?.badge;
     
     return (
-      <Card key={plan.id} className={`relative flex flex-col h-full transition-all duration-300 hover:shadow-xl border-2 ${
+      <Card key={plan.id} className={`relative flex flex-col h-full min-w-[320px] transition-all duration-300 hover:shadow-xl border-2 ${
         isHighlighted 
           ? 'border-blue-500 hover:border-blue-600 shadow-lg' 
           : 'border-gray-200 hover:border-blue-300'
       }`}>
         {isHighlighted && badge?.text && (
-          <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+          <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 z-10">
             <Badge 
               className="px-4 py-1 text-sm font-semibold"
               style={{ 
@@ -165,46 +165,100 @@ const PlansSection = ({ showAsSection = true, currentPlan, onSelectPlan, isLandi
             </Badge>
           </div>
         )}
-        <CardHeader className="text-center pb-6 pt-8">
-          <CardTitle className={`text-3xl font-bold ${isHighlighted ? 'text-blue-700' : 'text-gray-900'}`}>
+        
+        {/* Header com título e preço */}
+        <CardHeader className="text-center pb-4 pt-10 px-8">
+          <CardTitle className={`text-2xl font-bold mb-2 ${isHighlighted ? 'text-blue-700' : 'text-gray-900'}`}>
             {plan.name}
           </CardTitle>
-          {plan.description && (
-            <p className="text-gray-600 text-sm mt-2">{plan.description}</p>
-          )}
-          <div className="mt-3 space-y-3">
-            <div className="flex items-center justify-center gap-2">
-              <Check className="h-5 w-5 text-green-500" />
-              <span className="font-medium">
-                {plan.likeLimit === null ? 'Curtidas ilimitadas' : `${plan.likeLimit} curtidas/mês`}
-              </span>
-            </div>
-            <div className="flex items-center justify-center gap-2">
-              <Check className="h-5 w-5 text-green-500" />
-              <span className="font-medium">
-                {plan.messageLimit === null ? 'Mensagens ilimitadas' : `${plan.messageLimit} mensagens/projeto`}
-              </span>
-            </div>
-            {plan.features?.filter(f => f.enabled).map((feature) => (
-              <div key={feature.id} className="flex items-center justify-center gap-2">
-                <Check className="h-5 w-5 text-green-500" />
-                <span className="font-medium">{feature.label}</span>
-              </div>
-            ))}
-          </div>
-        </CardHeader>
-        <CardContent className="text-center flex-1 flex flex-col justify-between">
-          <div className="mb-6">
-            <div className={`text-5xl font-bold mb-2 ${isHighlighted ? 'text-blue-600' : 'text-gray-900'}`}>
+          
+          {/* Preço em destaque */}
+          <div className="mb-4">
+            <div className={`text-4xl font-bold mb-1 ${isHighlighted ? 'text-blue-600' : 'text-gray-900'}`}>
               R$ {(plan.price / 100).toFixed(2)}
-              <span className="text-lg text-gray-500">/mês</span>
+              <span className="text-lg text-gray-500 font-normal">/mês</span>
             </div>
             {isFreePlan && (
-              <p className="text-green-600 font-semibold text-lg">Para sempre!</p>
+              <p className="text-green-600 font-semibold text-sm">Para sempre!</p>
             )}
           </div>
+          
+          {plan.description && (
+            <p className="text-gray-600 text-sm leading-relaxed">{plan.description}</p>
+          )}
+        </CardHeader>
+
+        {/* Conteúdo com features */}
+        <CardContent className="flex-1 px-8 pb-8">
+          <div className="space-y-5 mb-8">
+            {/* Limites principais em destaque */}
+            <div className={`rounded-lg p-4 space-y-3 ${
+              isHighlighted ? 'bg-blue-50 border border-blue-100' : 'bg-gray-50'
+            }`}>
+              <div className="flex items-center gap-3">
+                <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${
+                  isHighlighted ? 'bg-blue-100' : 'bg-green-100'
+                }`}>
+                  <Check className={`h-4 w-4 ${
+                    isHighlighted ? 'text-blue-600' : 'text-green-600'
+                  }`} />
+                </div>
+                <div className="flex-1">
+                  <span className="font-semibold text-gray-900 block">
+                    {plan.likeLimit === null ? 'Curtidas ilimitadas' : `${plan.likeLimit} curtidas`}
+                  </span>
+                  <span className="text-sm text-gray-600">por mês</span>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-3">
+                <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${
+                  isHighlighted ? 'bg-blue-100' : 'bg-green-100'
+                }`}>
+                  <Check className={`h-4 w-4 ${
+                    isHighlighted ? 'text-blue-600' : 'text-green-600'
+                  }`} />
+                </div>
+                <div className="flex-1">
+                  <span className="font-semibold text-gray-900 block">
+                    {plan.messageLimit === null ? 'Mensagens ilimitadas' : `${plan.messageLimit} mensagens`}
+                  </span>
+                  <span className="text-sm text-gray-600">por projeto</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Features adicionais */}
+            {plan.features?.filter(f => f.enabled).length > 0 && (
+              <>
+                <div className="border-t border-gray-200 my-4"></div>
+                <div className="space-y-3">
+                  {plan.features?.filter(f => f.enabled).map((feature) => (
+                    <div key={feature.id} className="flex items-center gap-3">
+                      <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${
+                        isHighlighted ? 'bg-blue-100' : 'bg-gray-100'
+                      }`}>
+                        <Check className={`h-4 w-4 ${
+                          isHighlighted ? 'text-blue-600' : 'text-gray-600'
+                        }`} />
+                      </div>
+                      <span className="text-gray-700 font-medium">{feature.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          
+          {/* Botão de ação */}
           <Button 
-            className={`w-full text-lg py-3 ${isFreePlan ? 'bg-green-600 hover:bg-green-700 text-white font-semibold' : 'bg-blue-600 hover:bg-blue-700'}`} 
+            className={`w-full text-base py-3 h-12 font-semibold transition-all duration-200 ${
+              isFreePlan 
+                ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg hover:shadow-xl' 
+                : isHighlighted
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl'
+                  : 'bg-gray-900 hover:bg-gray-800 text-white shadow-md hover:shadow-lg'
+            }`} 
             onClick={() => handlePlanSelect(plan)}
           >
             {isFreePlan ? 'Começar Agora - Grátis!' : 'Assinar Agora'}
@@ -239,9 +293,9 @@ const PlansSection = ({ showAsSection = true, currentPlan, onSelectPlan, isLandi
             <TabsTrigger value="12">Anual</TabsTrigger>
           </TabsList>
           {[1, 3, 6, 12].map(period => (
-            <TabsContent key={period} value={period.toString()} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            <TabsContent key={period} value={period.toString()} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 justify-items-center">
               {plansByPeriod[period].length === 0 ? (
-                <div className="col-span-full text-center text-gray-500">Nenhum plano disponível.</div>
+                <div className="col-span-full text-center text-gray-500 py-12">Nenhum plano disponível.</div>
               ) : (
                 plansByPeriod[period].map(plan => renderPlanCard(plan))
               )}
@@ -250,7 +304,7 @@ const PlansSection = ({ showAsSection = true, currentPlan, onSelectPlan, isLandi
         </Tabs>
       ) : (
         <div className="flex justify-center">
-          <div className="max-w-md w-full">
+          <div className="w-full max-w-sm">
             {renderPlanCard(freePlan)}
           </div>
         </div>

@@ -12,6 +12,7 @@ import { useAppSelector } from "@/hooks/redux";
 import { ProjectService } from "@/services/projectService";
 import { Project, ProjectProposal, ProposalStatus } from "@/types/project";
 import { stripHtml } from "@/lib/utils";
+import { getProjectStatusColor, getProjectStatusLabel } from "@/utils/projectHelpers";
 
 const MeusProjetos = () => {
   const { toast } = useToast();
@@ -109,6 +110,27 @@ const MeusProjetos = () => {
     return categories[category as keyof typeof categories] || category;
   };
 
+  // Função para obter cor e label do badge do projeto
+  // Inclui caso especial de "Selecionado" quando o freelancer foi selecionado mas ainda não começou
+  const getProjectBadgeInfo = (project: Project, userId?: string) => {
+    // Caso especial: freelancer foi selecionado mas status ainda não é "executando" ou superior
+    const isSelected = project.selectedFreelancerId === userId && 
+                       (project.status === 'aguardando_garantia' || project.status === 'recebendo_propostas');
+    
+    if (isSelected) {
+      return {
+        color: 'bg-blue-100 text-blue-800',
+        label: 'Selecionado'
+      };
+    }
+
+    // Para outros status, usa as funções do helper
+    return {
+      color: getProjectStatusColor(project.status),
+      label: getProjectStatusLabel(project.status)
+    };
+  };
+
   const filterProposalsByStatus = (status: ProposalStatus) => {
     return proposals.filter(proposal => proposal.status === status);
   };
@@ -176,9 +198,14 @@ const MeusProjetos = () => {
                     <div className="flex-1">
                       <h3 className="text-base md:text-xl font-semibold text-gray-900 mb-2">{project.title}</h3>
                       <div className="flex flex-wrap gap-1 mb-2">
-                        <Badge className="bg-green-100 text-green-800 text-xs">
-                          {project.status === 'em_andamento' ? 'Em Andamento' : 'Concluído'}
-                        </Badge>
+                        {(() => {
+                          const badgeInfo = getProjectBadgeInfo(project, userProfile?.uid);
+                          return (
+                            <Badge className={`${badgeInfo.color} text-xs`}>
+                              {badgeInfo.label}
+                            </Badge>
+                          );
+                        })()}
                         <Badge variant="outline" className="text-xs">
                           {getCategoryLabel(project.category)}
                         </Badge>
@@ -248,9 +275,14 @@ const MeusProjetos = () => {
                         <div className="flex-1">
                           <h3 className="text-base md:text-xl font-semibold text-gray-900 mb-2">{project.title}</h3>
                           <div className="flex flex-wrap gap-1 mb-2">
-                            <Badge className="bg-green-100 text-green-800 text-xs">
-                              {project.status === 'executando' ? 'Em Andamento' : project.status === 'concluido' ? 'Concluído' : 'Selecionado'}
-                            </Badge>
+                            {(() => {
+                              const badgeInfo = getProjectBadgeInfo(project, userProfile?.uid);
+                              return (
+                                <Badge className={`${badgeInfo.color} text-xs`}>
+                                  {badgeInfo.label}
+                                </Badge>
+                              );
+                            })()}
                             <Badge variant="outline" className="text-xs">
                               {getCategoryLabel(project.category)}
                             </Badge>

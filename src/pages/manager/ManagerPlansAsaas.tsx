@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Plus, AlertCircle } from 'lucide-react';
+import { Plus, AlertCircle, Grid3x3, List } from 'lucide-react';
 import { Plan, CreatePlanInput, UpdatePlanInput } from '@/types/plan';
-import { getAllPlans, createPlan, updatePlan, deletePlan } from '@/services/planService';
+import { getAllPlans, createPlan, updatePlan, deletePlan, getCategoryLabel } from '@/services/planService';
 import { PlanCard } from '@/components/manager/PlanCard';
 import { PlanFormDialog } from '@/components/manager/PlanFormDialog';
 import {
@@ -18,6 +18,18 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { Edit, Trash2 } from 'lucide-react';
+
+type ViewMode = 'grid' | 'table';
 
 const ManagerPlansAsaas: React.FC = () => {
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -28,6 +40,7 @@ const ManagerPlansAsaas: React.FC = () => {
   const [deletingPlan, setDeletingPlan] = useState<Plan | null>(null);
   const [formLoading, setFormLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const { toast } = useToast();
 
   // Carregar planos
@@ -137,10 +150,30 @@ const ManagerPlansAsaas: React.FC = () => {
             Crie e gerencie planos de assinatura com personalização completa
           </p>
         </div>
-        <Button onClick={handleCreatePlan}>
-          <Plus className="h-4 w-4 mr-2" />
-          Criar Novo Plano
-        </Button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 border border-gray-300 rounded-md p-1 bg-white">
+            <Button
+              variant={viewMode === 'grid' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('grid')}
+              className="h-8 px-3"
+            >
+              <Grid3x3 className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={viewMode === 'table' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('table')}
+              className="h-8 px-3"
+            >
+              <List className="h-4 w-4" />
+            </Button>
+          </div>
+          <Button onClick={handleCreatePlan}>
+            <Plus className="h-4 w-4 mr-2" />
+            Criar Novo Plano
+          </Button>
+        </div>
       </div>
 
       <div className="flex-1 bg-gray-50 p-6 overflow-auto">
@@ -183,8 +216,8 @@ const ManagerPlansAsaas: React.FC = () => {
                       Criar primeiro plano
                     </Button>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                ) : viewMode === 'grid' ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 auto-rows-fr">
                     {plansByCategory[category as 1 | 3 | 6 | 12].map((plan) => (
                       <PlanCard
                         key={plan.id}
@@ -194,6 +227,111 @@ const ManagerPlansAsaas: React.FC = () => {
                         isAdmin
                       />
                     ))}
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Nome</TableHead>
+                          <TableHead>Descrição</TableHead>
+                          <TableHead>Preço</TableHead>
+                          <TableHead>Mensagens</TableHead>
+                          <TableHead>Curtidas</TableHead>
+                          <TableHead>Recursos</TableHead>
+                          <TableHead>Assinantes</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Ações</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {plansByCategory[category as 1 | 3 | 6 | 12].map((plan) => (
+                          <TableRow key={plan.id} className="hover:bg-gray-50">
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-2">
+                                {plan.name}
+                                {plan.cardStyle?.highlighted && (
+                                  <Badge
+                                    className="text-xs"
+                                    style={{
+                                      backgroundColor: plan.cardStyle.badge?.bgColor,
+                                      color: plan.cardStyle.badge?.textColor
+                                    }}
+                                  >
+                                    {plan.cardStyle.badge?.text}
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="max-w-xs">
+                              <div className="truncate" title={plan.description || undefined}>
+                                {plan.description || '-'}
+                              </div>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <span className="font-semibold">
+                                R$ {(plan.price / 100).toFixed(2)}
+                              </span>
+                              <span className="text-gray-500 text-sm">/mês</span>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {plan.messageLimit === null ? (
+                                <span className="text-green-600 font-medium">Ilimitadas</span>
+                              ) : (
+                                `${plan.messageLimit} mensagens/projeto`
+                              )}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {plan.likeLimit === null ? (
+                                <span className="text-green-600 font-medium">Ilimitadas</span>
+                              ) : (
+                                `${plan.likeLimit} curtidas/mês`
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap gap-1 max-w-xs">
+                                {plan.features?.filter(f => f.enabled).slice(0, 2).map((feature) => (
+                                  <Badge key={feature.id} variant="outline" className="text-xs">
+                                    {feature.label}
+                                  </Badge>
+                                ))}
+                                {plan.features && plan.features.filter(f => f.enabled).length > 2 && (
+                                  <Badge variant="outline" className="text-xs">
+                                    +{plan.features.filter(f => f.enabled).length - 2}
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {plan.subscribers || 0}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={plan.status === 'active' ? 'default' : 'secondary'}>
+                                {plan.status === 'active' ? 'Ativo' : 'Inativo'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleEditPlan(plan)}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => handleDeleteClick(plan)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 )}
               </TabsContent>

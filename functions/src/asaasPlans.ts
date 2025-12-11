@@ -3,7 +3,7 @@
  * Sistema de pagamento de projetos com split próprio
  */
 
-import * as functions from 'firebase-functions';
+import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import cors from 'cors';
 import {
@@ -285,6 +285,23 @@ export const createAsaasSubscription = functions.https.onRequest(async (req, res
 
       console.log('[Asaas Subscription] Iniciando criação para plano:', planId);
 
+      // Verificar se já existe assinatura ativa ou pendente
+      const existingSubscription = await db.collection('activeSubscriptions').doc(userId).get();
+      if (existingSubscription.exists) {
+        const existing = existingSubscription.data();
+        if (existing.status === 'active' || existing.status === 'pending') {
+          res.status(400).json({ 
+            error: 'Você já possui uma assinatura ativa ou pendente',
+            existingSubscription: {
+              planName: existing.planName,
+              status: existing.status,
+              asaasSubscriptionId: existing.asaasSubscriptionId
+            }
+          });
+          return;
+        }
+      }
+
       // Buscar dados do usuário
       const userDoc = await db.collection('users').doc(userId).get();
       if (!userDoc.exists) {
@@ -320,7 +337,7 @@ export const createAsaasSubscription = functions.https.onRequest(async (req, res
       
       const subscriptionAsaas: AsaasSubscription = {
         customer: customer.id!,
-        billingType: 'UNDEFINED', // Permite PIX e Cartão
+        billingType: 'CREDIT_CARD', // Usar cartão de crédito para garantir URL de pagamento
         value: Number(price),
         nextDueDate: nextDueDate,
         cycle: cycle,
@@ -331,7 +348,42 @@ export const createAsaasSubscription = functions.https.onRequest(async (req, res
       const subscription = await createSubscription(subscriptionAsaas);
       console.log('[Asaas Subscription] Assinatura criada:', subscription.id);
 
-      // Salvar assinatura no Firestore
+      // Buscar o primeiro pagamento da assinatura para obter invoiceUrl
+      let invoiceUrl = subscription.invoiceUrl;
+      
+      if (!invoiceUrl) {
+        try {
+          console.log('[Asaas Subscription] Buscando pagamentos da assinatura para obter invoiceUrl...');
+          
+          // Fazer requisição HTTP direta para buscar pagamentos da assinatura
+          const paymentsUrl = `${ASAAS_CONFIG.apiUrl}/subscriptions/${subscription.id}/payments`;
+          const paymentsResponse = await fetch(paymentsUrl, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'access_token': ASAAS_CONFIG.apiKey,
+            }
+          });
+          
+          if (paymentsResponse.ok) {
+            const paymentsData = await paymentsResponse.json();
+            if (paymentsData.data && paymentsData.data.length > 0) {
+              const firstPayment = paymentsData.data[0];
+              invoiceUrl = firstPayment.invoiceUrl;
+              console.log('[Asaas Subscription] InvoiceUrl encontrada no primeiro pagamento:', invoiceUrl);
+            } else {
+              console.log('[Asaas Subscription] Nenhum pagamento encontrado para a assinatura');
+            }
+          } else {
+            console.error('[Asaas Subscription] Erro ao buscar pagamentos:', paymentsResponse.status);
+          }
+        } catch (error) {
+          console.error('[Asaas Subscription] Erro ao buscar pagamentos da assinatura:', error);
+        }
+      }
+
+      // Salvar assinatura no Firestore com status PENDING (aguardando pagamento)
+      // IMPORTANTE: Não ativar o plano até o pagamento ser confirmado via webhook
       const subscriptionDoc = {
         userId,
         planId,
@@ -343,26 +395,25 @@ export const createAsaasSubscription = functions.https.onRequest(async (req, res
         gateway: 'asaas',
         asaasSubscriptionId: subscription.id,
         asaasCustomerId: customer.id,
-        status: 'active',
+        status: 'pending', // PENDENTE até pagamento ser confirmado
         nextDueDate: subscription.nextDueDate,
         cycle: subscription.cycle,
+        invoiceUrl: invoiceUrl, // Salvar a URL de pagamento
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
 
       await db.collection('activeSubscriptions').doc(userId).set(subscriptionDoc);
-      console.log('[Asaas Subscription] Assinatura salva no Firestore');
+      console.log('[Asaas Subscription] Assinatura salva no Firestore com status PENDING (aguardando pagamento)');
 
-      // Atualizar plano do usuário
-      await db.collection('users').doc(userId).update({
-        currentPlan: {
-          id: planId,
-          name: planName,
-          likeLimit: likeLimit || null,
-          messageLimit: messageLimit || null,
-          activatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        },
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      // NÃO atualizar o plano do usuário ainda - só após confirmação de pagamento via webhook
+      // O plano só será ativado quando o webhook confirmar o primeiro pagamento
+
+      console.log('[Asaas Subscription] Dados da resposta final:', {
+        id: subscription.id,
+        status: subscription.status,
+        invoiceUrl: invoiceUrl,
+        nextDueDate: subscription.nextDueDate
       });
 
       res.status(200).json({
@@ -371,7 +422,8 @@ export const createAsaasSubscription = functions.https.onRequest(async (req, res
         customerId: customer.id,
         status: subscription.status,
         nextDueDate: subscription.nextDueDate,
-        invoiceUrl: subscription.invoiceUrl,
+        invoiceUrl: invoiceUrl,
+        checkoutUrl: invoiceUrl, // Adicionar também como checkoutUrl para compatibilidade
         message: 'Assinatura criada com sucesso',
       });
 
@@ -403,17 +455,80 @@ export const asaasWebhook = functions.https.onRequest(async (req, res) => {
       console.log('[Asaas Webhook] Evento recebido:', event);
       console.log('[Asaas Webhook] Dados:', JSON.stringify(webhookData, null, 2));
 
-      // Salvar webhook no Firestore para auditoria
-      await db.collection('asaasWebhooks').add({
-        event,
-        data: webhookData,
-        receivedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      // PROTEÇÃO CONTRA DUPLICAÇÃO: Verificar se o webhook já foi processado
+      const webhookId = webhookData.payment?.id || webhookData.subscription?.id || webhookData.transfer?.id || webhookData.receivableAnticipation?.id;
+      if (webhookId) {
+        const existingWebhook = await db.collection('asaasWebhooks')
+          .where('event', '==', event)
+          .where('webhookId', '==', webhookId)
+          .limit(1)
+          .get();
+        
+        if (!existingWebhook.empty) {
+          const existing = existingWebhook.docs[0].data();
+          if (existing.processed) {
+            console.log('[Asaas Webhook] Webhook já processado anteriormente, ignorando:', webhookId);
+            res.status(200).send('ok');
+            return;
+          }
+        }
+      }
 
-      // Processar eventos de pagamento de projetos
+      // Salvar webhook no Firestore para auditoria (se não existir)
+      let webhookDocRef: FirebaseFirestore.DocumentReference;
+      if (webhookId) {
+        const existingWebhook = await db.collection('asaasWebhooks')
+          .where('event', '==', event)
+          .where('webhookId', '==', webhookId)
+          .limit(1)
+          .get();
+        
+        if (existingWebhook.empty) {
+          webhookDocRef = await db.collection('asaasWebhooks').add({
+            event,
+            webhookId: webhookId,
+            data: webhookData,
+            receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+            processed: false,
+          });
+        } else {
+          webhookDocRef = existingWebhook.docs[0].ref;
+        }
+      } else {
+        webhookDocRef = await db.collection('asaasWebhooks').add({
+          event,
+          webhookId: null,
+          data: webhookData,
+          receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+          processed: false,
+        });
+      }
+
+      // Processar eventos de pagamento
       if (event === ASAAS_WEBHOOK_EVENTS.PAYMENT_CONFIRMED || 
           event === ASAAS_WEBHOOK_EVENTS.PAYMENT_RECEIVED) {
-        await processPaymentConfirmed(webhookData.payment);
+        // Verificar se é pagamento de assinatura ou projeto
+        const payment = webhookData.payment;
+        const externalRef = payment?.externalReference as string;
+        
+        if (externalRef && externalRef.includes('plan_')) {
+          // É pagamento de assinatura - processar ativação
+          await processSubscriptionPayment(payment);
+        } else {
+          // É pagamento de projeto - processar normalmente
+          await processPaymentConfirmed(payment);
+        }
+      }
+
+      // Processar criação de pagamento (para salvar invoiceUrl de assinaturas)
+      if (event === 'PAYMENT_CREATED') {
+        const payment = webhookData.payment;
+        const externalRef = payment?.externalReference as string;
+        
+        if (externalRef && externalRef.includes('plan_') && payment?.subscription) {
+          // É pagamento de assinatura - salvar invoiceUrl
+          await saveSubscriptionInvoiceUrl(payment);
+        }
       }
 
       // Processar eventos de criação de assinatura
@@ -430,6 +545,14 @@ export const asaasWebhook = functions.https.onRequest(async (req, res) => {
       if (event === ASAAS_WEBHOOK_EVENTS.SUBSCRIPTION_INACTIVATED || 
           event === ASAAS_WEBHOOK_EVENTS.SUBSCRIPTION_DELETED) {
         await processSubscriptionInactivated(webhookData.subscription);
+      }
+
+      // Marcar webhook como processado
+      if (webhookDocRef) {
+        await webhookDocRef.update({
+          processed: true,
+          processedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
       }
 
       res.status(200).send('ok');
@@ -650,6 +773,175 @@ async function processExistingPayment(paymentDoc: FirebaseFirestore.DocumentSnap
 }
 
 /**
+ * Processa pagamento confirmado de assinatura
+ * Ativa o plano do usuário quando o primeiro pagamento é confirmado
+ */
+async function processSubscriptionPayment(paymentData: { 
+  id: string;
+  externalReference?: string;
+  subscription?: string;
+  value?: number;
+  [key: string]: unknown 
+}) {
+  try {
+    console.log('[Asaas Webhook] Processando pagamento de assinatura:', paymentData.id);
+    console.log('[Asaas Webhook] Dados do pagamento:', JSON.stringify(paymentData, null, 2));
+    
+    const subscriptionId = paymentData.subscription as string;
+    const externalRef = paymentData.externalReference as string;
+    
+    if (!subscriptionId) {
+      console.error('[Asaas Webhook] Subscription ID não encontrado no pagamento');
+      return;
+    }
+    
+    // Buscar assinatura no Firestore pelo asaasSubscriptionId
+    const subscriptionsQuery = await db.collection('activeSubscriptions')
+      .where('asaasSubscriptionId', '==', subscriptionId)
+      .limit(1)
+      .get();
+    
+    if (subscriptionsQuery.empty) {
+      console.error('[Asaas Webhook] Assinatura não encontrada no Firestore:', subscriptionId);
+      // Tentar buscar pelo externalReference se disponível
+      if (externalRef && externalRef.includes('plan_')) {
+        const parts = externalRef.split('_');
+        if (parts.length >= 4 && parts[0] === 'plan' && parts[2] === 'user') {
+          const userId = parts[3];
+          const subscriptionDoc = await db.collection('activeSubscriptions').doc(userId).get();
+          if (subscriptionDoc.exists) {
+            const subscription = subscriptionDoc.data();
+            if (subscription.status === 'pending') {
+              // Ativar assinatura
+              await activateSubscription(subscriptionDoc, subscription, paymentData);
+              return;
+            }
+          }
+        }
+      }
+      return;
+    }
+    
+    const subscriptionDoc = subscriptionsQuery.docs[0];
+    const subscription = subscriptionDoc.data();
+    
+    // Só ativar se estiver pendente (primeiro pagamento)
+    if (subscription.status === 'pending') {
+      await activateSubscription(subscriptionDoc, subscription, paymentData);
+    } else {
+      console.log('[Asaas Webhook] Assinatura já está ativa, apenas registrando pagamento');
+      // Apenas registrar o pagamento para assinaturas já ativas
+      await db.collection('planPayments').add({
+        userId: subscription.userId,
+        subscriptionId: subscription.asaasSubscriptionId,
+        planId: subscription.planId,
+        planName: subscription.planName,
+        amount: Number(paymentData.value) || subscription.price,
+        paymentId: paymentData.id,
+        status: 'confirmed',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+    
+  } catch (error) {
+    console.error('[Asaas Webhook] Erro ao processar pagamento de assinatura:', error);
+    throw error;
+  }
+}
+
+/**
+ * Ativa uma assinatura após confirmação de pagamento
+ */
+async function activateSubscription(
+  subscriptionDoc: admin.firestore.DocumentSnapshot,
+  subscription: admin.firestore.DocumentData,
+  paymentData: { id: string; value?: number; [key: string]: unknown }
+) {
+  const userId = subscription.userId;
+  
+  console.log('[Asaas Webhook] Ativando assinatura para usuário:', userId);
+  
+  // Atualizar status da assinatura para active
+  await subscriptionDoc.ref.update({
+    status: 'active',
+    firstPaymentAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  
+  console.log('[Asaas Webhook] Status da assinatura atualizado para ACTIVE');
+  
+  // Ativar plano do usuário
+  await db.collection('users').doc(userId).update({
+    currentPlan: {
+      id: subscription.planId,
+      name: subscription.planName,
+      likeLimit: subscription.likeLimit,
+      messageLimit: subscription.messageLimit,
+      activatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  
+  console.log('[Asaas Webhook] ✅ Plano ativado para o usuário:', userId);
+  
+  // Criar registro do pagamento
+  await db.collection('planPayments').add({
+    userId,
+    subscriptionId: subscription.asaasSubscriptionId,
+    planId: subscription.planId,
+    planName: subscription.planName,
+    amount: Number(paymentData.value) || subscription.price,
+    paymentId: paymentData.id,
+    status: 'confirmed',
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  
+  console.log('[Asaas Webhook] Registro de pagamento criado');
+}
+
+/**
+ * Salva invoiceUrl do pagamento na assinatura
+ */
+async function saveSubscriptionInvoiceUrl(paymentData: { 
+  id: string;
+  subscription: string;
+  invoiceUrl?: string;
+  externalReference?: string;
+  [key: string]: unknown 
+}) {
+  try {
+    const subscriptionId = paymentData.subscription;
+    const invoiceUrl = paymentData.invoiceUrl;
+    
+    if (!subscriptionId || !invoiceUrl) {
+      console.log('[Asaas Webhook] Dados insuficientes para salvar invoiceUrl');
+      return;
+    }
+    
+    console.log('[Asaas Webhook] Salvando invoiceUrl para assinatura:', subscriptionId);
+    
+    // Buscar assinatura no Firestore
+    const subscriptionsQuery = await db.collection('activeSubscriptions')
+      .where('asaasSubscriptionId', '==', subscriptionId)
+      .limit(1)
+      .get();
+    
+    if (!subscriptionsQuery.empty) {
+      const subscriptionDoc = subscriptionsQuery.docs[0];
+      await subscriptionDoc.ref.update({
+        invoiceUrl: invoiceUrl,
+        firstPaymentId: paymentData.id,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      
+      console.log('[Asaas Webhook] InvoiceUrl salva na assinatura:', invoiceUrl);
+    }
+  } catch (error) {
+    console.error('[Asaas Webhook] Erro ao salvar invoiceUrl:', error);
+  }
+}
+
+/**
  * Processa criação de assinatura (SUBSCRIPTION_CREATED)
  * Este evento ocorre quando uma assinatura é criada, mas ainda não foi paga
  */
@@ -819,6 +1111,8 @@ export const checkAsaasPaymentStatus = functions.https.onRequest(async (req, res
  * Firebase Function: Transferir valores para freelancer
  * POST /transferToFreelancerAsaas
  */
+// FUNÇÃO REMOVIDA - não utilizada
+/*
 export const transferToFreelancerAsaas = functions.https.onRequest(async (req, res) => {
   corsHandler(req, res, async () => {
     res.set('Access-Control-Allow-Origin', '*');
@@ -908,4 +1202,5 @@ export const transferToFreelancerAsaas = functions.https.onRequest(async (req, r
     }
   });
 });
+*/
 

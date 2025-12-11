@@ -23,6 +23,7 @@ import {
 import { UserProfile } from '../types/user';
 import { UserProfileService } from './userProfileService';
 import { EmailService } from './emailService';
+import { canUseLike, useLike as useLikeService } from './planUsageService';
 
 export class ProjectLikesService {
   
@@ -99,10 +100,10 @@ export class ProjectLikesService {
         throw new Error('Nome do freelancer não encontrado no perfil');
       }
 
-      // Por enquanto, curtidas ilimitadas (gratuito), mas verificaremos no futuro
-      const likesRemaining = freelancerProfile.likesRemaining ?? -1; // -1 = ilimitado
-      if (likesRemaining === 0) {
-        throw new Error('Você não possui curtidas restantes. Atualize seu plano.');
+      // Verificar limite de curtidas do plano
+      const canLikeCheck = await canUseLike(data.freelancerId);
+      if (!canLikeCheck.canUse) {
+        throw new Error(canLikeCheck.reason || 'Você não possui curtidas restantes. Atualize seu plano.');
       }
 
       let clientId: string | undefined;
@@ -196,6 +197,14 @@ export class ProjectLikesService {
 
         return newLike;
       });
+
+      // Após sucesso na transação, decrementar curtida do plano
+      const useLikeResult = await useLikeService(data.freelancerId);
+      if (!useLikeResult.success) {
+        // Se falhou ao usar curtida, reverter a curtida do projeto
+        // (Por enquanto apenas logamos, pois a transação já foi commitada)
+        console.error('Erro ao registrar uso de curtida:', useLikeResult.error);
+      }
 
       // Após sucesso na transação, criar documento em projectProposals para disparar trigger de notificação
       try {

@@ -162,9 +162,13 @@ export function AdvanceRequestDialog({
 
   // Usar simulação do Asaas se disponível, senão calcular 2%
   const requestedAmount = parseFloat(formData.amount) || 0;
-  const feeAmount = simulation ? simulation.fee : (requestedAmount * 2) / 100;
-  const netAmount = simulation ? simulation.netValue : (requestedAmount - feeAmount);
-  const feePercentage = simulation ? simulation.feePercentage : '2.00';
+  
+  // Calcular taxa proporcionalmente baseada na taxa percentual da simulação
+  // Se o usuário digitou um valor, usar esse valor; senão usar o valor da simulação inicial
+  const displayValue = requestedAmount > 0 ? requestedAmount : (simulation?.value || 0);
+  const feePercentage = simulation ? parseFloat(simulation.feePercentage) : 2.0;
+  const feeAmount = (displayValue * feePercentage) / 100;
+  const netAmount = displayValue - feeAmount;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -189,23 +193,23 @@ export function AdvanceRequestDialog({
             </Alert>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4" id="advance-form">
-            {/* Simulação do Asaas */}
-            {simulation && (
+            {/* Simulação do Asaas - Mostrar apenas quando o usuário digitar um valor */}
+            {simulation && requestedAmount > 0 && (
               <div className="bg-green-50 border border-green-300 rounded-lg p-4 space-y-2">
                 <div className="text-xs text-green-700 mb-2 font-medium flex items-center gap-2">
                   ✅ Simulação Asaas confirmada
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span>Valor disponível:</span>
-                  <span className="font-semibold">R$ {simulation.value.toFixed(2)}</span>
+                  <span>Valor do adiantamento:</span>
+                  <span className="font-semibold">R$ {requestedAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm text-red-600">
-                  <span>Taxa Asaas ({simulation.feePercentage}%):</span>
-                  <span className="font-semibold">- R$ {simulation.fee.toFixed(2)}</span>
+                  <span>Taxa Asaas ({feePercentage.toFixed(2)}%):</span>
+                  <span className="font-semibold">- R$ {feeAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm text-green-700 font-bold border-t border-green-300 pt-2">
                   <span>Você receberá:</span>
-                  <span>R$ {simulation.netValue.toFixed(2)}</span>
+                  <span>R$ {netAmount.toFixed(2)}</span>
                 </div>
                 {simulation.isDocumentationRequired && (
                   <div className="text-xs text-amber-600 mt-2">
@@ -250,8 +254,8 @@ export function AdvanceRequestDialog({
               />
             </div>
 
-            {/* Cálculo da taxa */}
-            {requestedAmount > 0 && (
+            {/* Cálculo da taxa - Mostrar apenas se não tiver simulação do Asaas */}
+            {requestedAmount > 0 && !simulation && (
               <div className="bg-gray-50 border rounded-lg p-4 space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-sm">Valor solicitado:</span>
@@ -260,7 +264,7 @@ export function AdvanceRequestDialog({
                 <div className="flex justify-between items-center text-red-600">
                   <span className="text-sm flex items-center">
                     <Minus className="h-3 w-3 mr-1" />
-                    Taxa ({feePercentage}%):
+                    Taxa ({feePercentage.toFixed(2)}%):
                   </span>
                   <span className="font-semibold">R$ {feeAmount.toFixed(2)}</span>
                 </div>

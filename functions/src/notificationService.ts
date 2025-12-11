@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import * as admin from 'firebase-admin';
 import { logger } from 'firebase-functions';
 import { LogHelpers, createSystemLog } from './logService';
 
@@ -54,7 +55,11 @@ export interface CreateNotificationData {
 }
 
 // Função para criar notificação
-export const createNotification = onCall(async (request) => {
+export const createNotification = onCall({
+  maxInstances: 20,
+  timeoutSeconds: 540,
+  memory: '256MiB'
+}, async (request) => {
   try {
     const { userId, type, title, message, actionUrl, actionLabel, metadata } = request.data as CreateNotificationData;
 
@@ -163,6 +168,14 @@ export const onUserUpdated = onDocumentUpdated('users/{userId}', async (event) =
     const { email, name, userType } = afterData;
     const userId = event.params.userId;
 
+    // PROTEÇÃO CONTRA LOOPS: Verificar se já foi processado recentemente
+    const lastProcessed = afterData._lastTriggerProcessed as FirebaseFirestore.Timestamp | undefined;
+    const now = admin.firestore.Timestamp.now();
+    if (lastProcessed && (now.seconds - lastProcessed.seconds) < 5) {
+      logger.info('Trigger onUserUpdated ignorado - processado recentemente', { userId });
+      return;
+    }
+
     // Verificar se houve mudanças significativas no perfil
     const profileFields = ['name', 'email', 'phone', 'bio', 'skills', 'portfolio', 'experience'];
     const changedFields = profileFields.filter(field => beforeData[field] !== afterData[field]);
@@ -192,6 +205,11 @@ export const onUserUpdated = onDocumentUpdated('users/{userId}', async (event) =
         userId
       );
     }
+
+    // Marcar como processado para evitar loops
+    await event.data?.after.ref.update({
+      _lastTriggerProcessed: admin.firestore.FieldValue.serverTimestamp()
+    });
 
     logger.info('Notificação de atualização de usuário processada', { userId, changedFields });
   } catch (err) {
@@ -266,9 +284,10 @@ export async function notifyAllAdmins(
   metadata?: Record<string, unknown>
 ) {
   try {
-    // Buscar todos os usuários com role 'manager' ou 'moderator'
+    // Buscar todos os usuários com role 'manager' ou 'moderator' (LIMITE ADICIONADO)
     const adminQuery = await db.collection('users')
       .where('role', 'in', ['manager', 'moderator'])
+      .limit(50) // Limite para evitar processamento excessivo
       .get();
 
     const notifications: Promise<FirebaseFirestore.DocumentReference>[] = [];
@@ -303,7 +322,11 @@ export async function notifyAllAdmins(
 }
 
 // Função para marcar notificação como visualizada (aberta)
-export const markNotificationAsViewed = onCall(async (request) => {
+export const markNotificationAsViewed = onCall({
+  maxInstances: 20,
+  timeoutSeconds: 540,
+  memory: '256MiB'
+}, async (request) => {
   try {
     const { notificationId, userId } = request.data;
 
@@ -342,7 +365,11 @@ export const markNotificationAsViewed = onCall(async (request) => {
 });
 
 // Função para marcar notificação como lida
-export const markNotificationAsRead = onCall(async (request) => {
+export const markNotificationAsRead = onCall({
+  maxInstances: 20,
+  timeoutSeconds: 540,
+  memory: '256MiB'
+}, async (request) => {
   try {
     const { notificationId, userId } = request.data;
 
@@ -377,7 +404,11 @@ export const markNotificationAsRead = onCall(async (request) => {
 });
 
 // Função para marcar todas as notificações como lidas
-export const markAllNotificationsAsRead = onCall(async (request) => {
+export const markAllNotificationsAsRead = onCall({
+  maxInstances: 10,
+  timeoutSeconds: 540,
+  memory: '256MiB'
+}, async (request) => {
   try {
     const { userId } = request.data;
 
@@ -421,7 +452,11 @@ export const markAllNotificationsAsRead = onCall(async (request) => {
 });
 
 // Função para deletar notificação
-export const deleteNotification = onCall(async (request) => {
+export const deleteNotification = onCall({
+  maxInstances: 20,
+  timeoutSeconds: 540,
+  memory: '256MiB'
+}, async (request) => {
   try {
     const { notificationId, userId } = request.data;
 
@@ -452,7 +487,11 @@ export const deleteNotification = onCall(async (request) => {
 });
 
 // Função para deletar notificações lidas
-export const deleteReadNotifications = onCall(async (request) => {
+export const deleteReadNotifications = onCall({
+  maxInstances: 10,
+  timeoutSeconds: 540,
+  memory: '256MiB'
+}, async (request) => {
   try {
     const { userId } = request.data;
 
@@ -491,7 +530,11 @@ export const deleteReadNotifications = onCall(async (request) => {
 });
 
 // Função para deletar todas as notificações do usuário
-export const deleteAllNotifications = onCall(async (request) => {
+export const deleteAllNotifications = onCall({
+  maxInstances: 10,
+  timeoutSeconds: 540,
+  memory: '256MiB'
+}, async (request) => {
   try {
     const { userId } = request.data;
 
@@ -529,7 +572,11 @@ export const deleteAllNotifications = onCall(async (request) => {
 });
 
 // Função para limpar notificações expiradas (executada periodicamente)
-export const cleanupExpiredNotifications = onCall(async (request) => {
+export const cleanupExpiredNotifications = onCall({
+  maxInstances: 5,
+  timeoutSeconds: 540,
+  memory: '256MiB'
+}, async (request) => {
   try {
     const { daysOld = 30 } = request.data || {};
     
@@ -689,6 +736,14 @@ export const onProjectStatusChangedV2 = onDocumentUpdated('projects/{projectId}'
     // Se o status não mudou, não fazer nada
     if (oldStatus === newStatus) return;
 
+    // PROTEÇÃO CONTRA LOOPS: Verificar se já foi processado recentemente
+    const lastProcessed = afterData._lastStatusTriggerProcessed as FirebaseFirestore.Timestamp | undefined;
+    const now = admin.firestore.Timestamp.now();
+    if (lastProcessed && (now.seconds - lastProcessed.seconds) < 5) {
+      logger.info('Trigger onProjectStatusChangedV2 ignorado - processado recentemente', { projectId: event.params.projectId });
+      return;
+    }
+
     let notificationType: NotificationType;
     let notificationTitle: string;
     let notificationMessage: string;
@@ -809,6 +864,11 @@ export const onProjectStatusChangedV2 = onDocumentUpdated('projects/{projectId}'
         event.params.projectId
       );
     }
+
+    // Marcar como processado para evitar loops
+    await event.data?.after.ref.update({
+      _lastStatusTriggerProcessed: admin.firestore.FieldValue.serverTimestamp()
+    });
 
     logger.info('Notificação de mudança de status criada', { 
       projectId: event.params.projectId, 
@@ -954,6 +1014,14 @@ export const onPaymentStatusChanged = onDocumentUpdated('projectPayments/{paymen
     // Se o status não mudou ou está indefinido, não fazer nada
     if (!newStatus || oldStatus === newStatus) return;
 
+    // PROTEÇÃO CONTRA LOOPS: Verificar se já foi processado recentemente
+    const lastProcessed = afterData._lastPaymentTriggerProcessed as FirebaseFirestore.Timestamp | undefined;
+    const now = admin.firestore.Timestamp.now();
+    if (lastProcessed && (now.seconds - lastProcessed.seconds) < 5) {
+      logger.info('Trigger onPaymentStatusChanged ignorado - processado recentemente', { paymentId: event.params.paymentId });
+      return;
+    }
+
     // Buscar dados do projeto
     const projectDoc = await db.collection('projects').doc(projectId).get();
     const projectData = projectDoc.data();
@@ -1098,6 +1166,11 @@ export const onPaymentStatusChanged = onDocumentUpdated('projectPayments/{paymen
         await LogHelpers.paymentFailed(amount, title, clientName, projectId, 'Pagamento recusado');
         break;
     }
+
+    // Marcar como processado para evitar loops
+    await event.data?.after.ref.update({
+      _lastPaymentTriggerProcessed: admin.firestore.FieldValue.serverTimestamp()
+    });
 
     logger.info('Notificação de pagamento criada', { 
       paymentId: event.params.paymentId, 

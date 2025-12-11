@@ -3,6 +3,7 @@ import { useAuthListener } from "./useAuth";
 import { auth, db, functions } from "../lib/firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
+import { getPlanUsage, getUserPlanLimits, syncLikesFromProjects } from "@/services/planUsageService";
 
 export interface Plan {
   id: string;
@@ -92,24 +93,69 @@ export const usePlans = () => {
         setCurrentUserPlan(null);
         return;
       }
-      const userRef = doc(db, "users", user.uid);
-      const userSnap = await getDoc(userRef);
-      if (userSnap.exists()) {
-        const data = userSnap.data();
-        setCurrentUserPlan({
-          name: data.planName || "Gratuito",
-          likes: typeof data.planLikes === "number" ? data.planLikes : 12,
-          messages: typeof data.planMessages === "number" ? data.planMessages : "1 por projeto",
-          likesUsed: typeof data.likesUsed === "number" ? data.likesUsed : 0,
-          messagesUsed: typeof data.messagesUsed === "number" ? data.messagesUsed : 0,
-          renewalDate: typeof data.planRenewalDate === "string" ? data.planRenewalDate : undefined,
-          isActive: !!data.planActive,
+      
+      // Buscar limites e uso do plano usando o novo serviço
+      const [limits, usage] = await Promise.all([
+        getUserPlanLimits(user.uid),
+        getPlanUsage(user.uid)
+      ]);
+      
+      // Sincronizar curtidas existentes no Firestore (apenas se o contador estiver zerado)
+      // Isso garante que curtidas antigas sejam contabilizadas na primeira vez
+      if (usage.likesUsed === 0) {
+        // Sincronizar em background (não bloquear a UI)
+        syncLikesFromProjects(user.uid, false).then(result => {
+          if (result.success && result.likesCounted > 0) {
+            // Se encontrou curtidas, atualizar o plano novamente
+            fetchUserPlan();
+          }
+        }).catch(err => {
+          console.error('Erro ao sincronizar curtidas:', err);
         });
-      } else {
-        setCurrentUserPlan(null);
       }
+      
+      // Buscar data de renovação e status do documento do usuário ou subscription
+      let renewalDate: string | undefined;
+      let isActive = true;
+      try {
+        const subscriptionRef = doc(db, 'activeSubscriptions', user.uid);
+        const subscriptionSnap = await getDoc(subscriptionRef);
+        if (subscriptionSnap.exists()) {
+          const subData = subscriptionSnap.data();
+          if (subData.nextDueDate) {
+            renewalDate = subData.nextDueDate.toDate ? subData.nextDueDate.toDate().toISOString() : subData.nextDueDate;
+          }
+          // Verificar se está pendente (aguardando pagamento)
+          if (subData.status === 'pending') {
+            isActive = false; // Não está ativo até pagamento ser confirmado
+          }
+        }
+      } catch (err) {
+        console.error('Erro ao buscar data de renovação:', err);
+      }
+      
+      setCurrentUserPlan({
+        name: limits.planName,
+        likes: limits.likeLimit ?? 12,
+        messages: limits.isFree && limits.messageLimit === null 
+          ? "1 por projeto" 
+          : (limits.messageLimit ?? "Ilimitadas"),
+        likesUsed: usage.likesUsed,
+        messagesUsed: usage.messagesUsed,
+        renewalDate,
+        isActive: isActive,
+      });
     } catch (error) {
-      setCurrentUserPlan(null);
+      console.error('Erro ao buscar plano do usuário:', error);
+      // Fallback para plano gratuito
+      setCurrentUserPlan({
+        name: "Gratuito",
+        likes: 12,
+        messages: "1 por projeto",
+        likesUsed: 0,
+        messagesUsed: 0,
+        isActive: true,
+      });
     } finally {
       setLoading(false);
     }
@@ -160,40 +206,61 @@ export const usePlans = () => {
     }
   };
 
-  // Função para usar uma curtida
+  // Função para usar uma curtida (mantida para compatibilidade, mas agora usa o serviço)
   const useLike = async (): Promise<boolean> => {
-    if (!currentUserPlan || currentUserPlan.likesUsed >= currentUserPlan.likes) return false;
     try {
       const user = auth.currentUser;
       if (!user) return false;
-      const userRef = doc(db, "users", user.uid);
-      await setDoc(userRef, { likesUsed: currentUserPlan.likesUsed + 1 }, { merge: true });
-      await fetchUserPlan();
-      return true;
+      
+      const { useLike: useLikeService } = await import('@/services/planUsageService');
+      const result = await useLikeService(user.uid);
+      
+      if (result.success) {
+        await fetchUserPlan();
+        return true;
+      }
+      return false;
     } catch (error) {
+      console.error('Erro ao usar curtida:', error);
       return false;
     }
   };
 
-  // Função para usar uma mensagem
-  const useMessage = async (): Promise<boolean> => {
-    if (!currentUserPlan || typeof currentUserPlan.messages !== "number" || currentUserPlan.messagesUsed >= currentUserPlan.messages) return false;
+  // Função para usar uma mensagem (mantida para compatibilidade, mas agora usa o serviço)
+  const useMessage = async (projectId?: string): Promise<boolean> => {
     try {
       const user = auth.currentUser;
       if (!user) return false;
-      const userRef = doc(db, "users", user.uid);
-      await setDoc(userRef, { messagesUsed: currentUserPlan.messagesUsed + 1 }, { merge: true });
-      await fetchUserPlan();
-      return true;
+      
+      const { useMessage: useMessageService } = await import('@/services/planUsageService');
+      // Se não tiver projectId, tentar buscar do contexto atual (não ideal, mas mantém compatibilidade)
+      const result = await useMessageService(user.uid, projectId || 'unknown');
+      
+      if (result.success) {
+        await fetchUserPlan();
+        return true;
+      }
+      return false;
     } catch (error) {
+      console.error('Erro ao usar mensagem:', error);
       return false;
     }
   };
 
-  const likesProgress = currentUserPlan ? (currentUserPlan.likesUsed / currentUserPlan.likes) * 100 : 0;
-  const messagesProgress = currentUserPlan && typeof currentUserPlan.messages === "number"
-    ? (currentUserPlan.messagesUsed / currentUserPlan.messages) * 100
+  const likesProgress = currentUserPlan && typeof currentUserPlan.likes === "number"
+    ? Math.min((currentUserPlan.likesUsed / currentUserPlan.likes) * 100, 100)
     : 0;
+  
+  // Para mensagens, calcular progresso baseado no tipo
+  let messagesProgress = 0;
+  if (currentUserPlan) {
+    if (typeof currentUserPlan.messages === "number") {
+      messagesProgress = Math.min((currentUserPlan.messagesUsed / currentUserPlan.messages) * 100, 100);
+    } else if (currentUserPlan.messages === "1 por projeto") {
+      // Para plano gratuito, não mostrar progresso (é por projeto)
+      messagesProgress = 0;
+    }
+  }
 
   return {
     availablePlans,
@@ -205,9 +272,13 @@ export const usePlans = () => {
     useMessage,
     likesProgress,
     messagesProgress,
-    canLike: currentUserPlan ? currentUserPlan.likesUsed < currentUserPlan.likes : false,
-    canMessage: currentUserPlan && typeof currentUserPlan.messages === "number"
-      ? currentUserPlan.messagesUsed < currentUserPlan.messages
+    canLike: currentUserPlan 
+      ? (typeof currentUserPlan.likes === "number" ? currentUserPlan.likesUsed < currentUserPlan.likes : true)
+      : false,
+    canMessage: currentUserPlan 
+      ? (typeof currentUserPlan.messages === "number" 
+          ? currentUserPlan.messagesUsed < currentUserPlan.messages 
+          : true)
       : true,
   };
 };

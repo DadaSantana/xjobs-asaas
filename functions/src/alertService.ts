@@ -5,19 +5,25 @@ import { getFirestore, FieldValue, QueryDocumentSnapshot } from 'firebase-admin/
 const db = getFirestore();
 
 // Função agendada para verificar deadlines de projetos (executa diariamente às 9h)
-export const checkProjectDeadlines = onSchedule('0 9 * * *', async () => {
+export const checkProjectDeadlines = onSchedule({
+  schedule: '0 9 * * *',
+  timeZone: 'America/Sao_Paulo',
+  timeoutSeconds: 540, // 9 minutos (máximo para 2ª gen)
+  memory: '256MiB' // Limite de memória
+}, async () => {
   try {
     logger.info('Iniciando verificação de deadlines de projetos');
     
     const now = new Date();
     const threeDaysFromNow = new Date(now.getTime() + (3 * 24 * 60 * 60 * 1000));
     
-    // Buscar projetos em andamento com deadline próximo
+    // Buscar projetos em andamento com deadline próximo (LIMITE ADICIONADO)
     const projectsQuery = await db
       .collection('projects')
       .where('status', '==', 'em_andamento')
       .where('deadline', '<=', threeDaysFromNow)
       .where('deadline', '>', now)
+      .limit(100) // Limite para evitar processamento excessivo
       .get();
     
     for (const projectDoc of projectsQuery.docs) {
@@ -104,18 +110,24 @@ export const checkProjectDeadlines = onSchedule('0 9 * * *', async () => {
 });
 
 // Função agendada para verificar pagamentos pendentes (executa diariamente às 10h)
-export const checkPendingPayments = onSchedule('0 10 * * *', async () => {
+export const checkPendingPayments = onSchedule({
+  schedule: '0 10 * * *',
+  timeZone: 'America/Sao_Paulo',
+  timeoutSeconds: 540, // 9 minutos (máximo para 2ª gen)
+  memory: '256MiB' // Limite de memória
+}, async () => {
   try {
     logger.info('Iniciando verificação de pagamentos pendentes');
     
     const now = new Date();
     const threeDaysAgo = new Date(now.getTime() - (3 * 24 * 60 * 60 * 1000));
     
-    // Buscar pagamentos pendentes há mais de 3 dias
+    // Buscar pagamentos pendentes há mais de 3 dias (LIMITE ADICIONADO)
     const pendingPaymentsQuery = await db
       .collection('projectPayments')
       .where('paymentStatus', '==', 'pending')
       .where('createdAt', '<=', threeDaysAgo)
+      .limit(100) // Limite para evitar processamento excessivo
       .get();
     
     for (const paymentDoc of pendingPaymentsQuery.docs) {
@@ -196,18 +208,24 @@ export const checkPendingPayments = onSchedule('0 10 * * *', async () => {
 });
 
 // Função agendada para verificar disputas abertas há muito tempo (executa diariamente às 11h)
-export const checkOpenDisputes = onSchedule('0 11 * * *', async () => {
+export const checkOpenDisputes = onSchedule({
+  schedule: '0 11 * * *',
+  timeZone: 'America/Sao_Paulo',
+  timeoutSeconds: 540, // 9 minutos (máximo para 2ª gen)
+  memory: '256MiB' // Limite de memória
+}, async () => {
   try {
     logger.info('Iniciando verificação de disputas abertas');
     
     const now = new Date();
     const threeDaysAgo = new Date(now.getTime() - (3 * 24 * 60 * 60 * 1000));
     
-    // Buscar disputas abertas há mais de 3 dias
+    // Buscar disputas abertas há mais de 3 dias (LIMITE ADICIONADO)
     const openDisputesQuery = await db
       .collection('disputes')
       .where('status', '==', 'open')
       .where('createdAt', '<=', threeDaysAgo)
+      .limit(100) // Limite para evitar processamento excessivo
       .get();
     
     for (const disputeDoc of openDisputesQuery.docs) {
@@ -286,7 +304,12 @@ export const checkOpenDisputes = onSchedule('0 11 * * *', async () => {
 });
 
 // Função agendada para limpeza de notificações antigas (executa semanalmente aos domingos às 2h)
-export const cleanupOldNotifications = onSchedule('0 2 * * 0', async () => {
+export const cleanupOldNotifications = onSchedule({
+  schedule: '0 2 * * 0',
+  timeZone: 'America/Sao_Paulo',
+  timeoutSeconds: 540, // 9 minutos (máximo para 2ª gen)
+  memory: '256MiB' // Limite de memória
+}, async () => {
   try {
     logger.info('Iniciando limpeza de notificações antigas');
     
@@ -323,18 +346,24 @@ export const cleanupOldNotifications = onSchedule('0 2 * * 0', async () => {
 });
 
 // Função agendada para verificar projetos sem atividade (executa diariamente às 14h)
-export const checkInactiveProjects = onSchedule('0 14 * * *', async () => {
+export const checkInactiveProjects = onSchedule({
+  schedule: '0 14 * * *',
+  timeZone: 'America/Sao_Paulo',
+  timeoutSeconds: 540, // 9 minutos (máximo para 2ª gen)
+  memory: '256MiB' // Limite de memória
+}, async () => {
   try {
     logger.info('Iniciando verificação de projetos inativos');
     
     const now = new Date();
     const sevenDaysAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
     
-    // Buscar projetos em andamento sem atividade recente
+    // Buscar projetos em andamento sem atividade recente (LIMITE ADICIONADO)
     const inactiveProjectsQuery = await db
       .collection('projects')
       .where('status', '==', 'em_andamento')
       .where('updatedAt', '<=', sevenDaysAgo)
+      .limit(100) // Limite para evitar processamento excessivo
       .get();
     
     for (const projectDoc of inactiveProjectsQuery.docs) {

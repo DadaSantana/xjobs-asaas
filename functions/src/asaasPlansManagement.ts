@@ -2,7 +2,7 @@
  * Firebase Functions para gerenciamento de planos Asaas
  */
 
-import * as functions from 'firebase-functions';
+import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import cors from 'cors';
 import { getCycleFromCategory } from './asaasService';
@@ -299,7 +299,11 @@ export const deleteAsaasPlan = functions.https.onRequest(async (req, res) => {
  * Firebase Function: Listar planos Asaas
  * GET /listAsaasPlans
  */
-export const listAsaasPlans = functions.https.onRequest(async (req, res) => {
+export const listAsaasPlans = functions.region('us-central1').runWith({
+  maxInstances: 10,
+  timeoutSeconds: 540,
+  memory: '256MB'
+}).https.onRequest(async (req, res) => {
   return corsHandler(req, res, async () => {
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');

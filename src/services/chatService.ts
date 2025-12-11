@@ -23,6 +23,7 @@ import { db, storage } from '@/lib/firebase';
 import { Chat, ChatMessage, CreateChatData, SendMessageData } from '@/types/chat';
 import { ModerationService } from './moderationService';
 import { NotificationService } from './notificationService';
+import { canSendMessage, useMessage as useMessageService } from './planUsageService';
 
 export class ChatService {
   
@@ -156,6 +157,14 @@ export class ChatService {
         throw new Error('Esta conversa não está mais ativa.');
       }
 
+      // Verificar limite de mensagens do plano (apenas para freelancers)
+      if (senderType === 'freelancer') {
+        const canMessage = await canSendMessage(senderId, chat.projectId);
+        if (!canMessage.canUse) {
+          throw new Error(canMessage.reason || 'Você atingiu o limite de mensagens do seu plano.');
+        }
+      }
+
       // Adicionar mensagem à subcoleção
       const messagesRef = collection(db, 'chats', data.chatId, 'messages');
       const messageData: any = {
@@ -210,6 +219,15 @@ export class ChatService {
       }
       
       await updateDoc(chatRef, updateData);
+      
+      // Decrementar mensagem do plano (apenas para freelancers)
+      if (senderType === 'freelancer') {
+        const useMessageResult = await useMessageService(senderId, chat.projectId);
+        if (!useMessageResult.success) {
+          // Log apenas, pois a mensagem já foi enviada
+          console.error('Erro ao registrar uso de mensagem:', useMessageResult.error);
+        }
+      }
       
       // Notificar o destinatário sobre a nova mensagem
       const recipientId = senderType === 'client' ? chat.freelancerId : chat.clientId;

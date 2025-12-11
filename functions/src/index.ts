@@ -51,7 +51,8 @@ export {
   processAdvanceRequest,
   listAdvanceRequests,
   approveAdvanceRequest,
-  rejectAdvanceRequest
+  rejectAdvanceRequest,
+  fixAdvanceTransactionsStatus
 } from './advanceService';
 
 // Funções do sistema de saque Asaas

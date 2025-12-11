@@ -166,11 +166,24 @@ export async function deletePlan(planId: string): Promise<void> {
 /**
  * Criar assinatura de plano
  */
-export async function createSubscription(planId: string): Promise<{ checkoutUrl: string; subscriptionId: string }> {
+export async function createSubscription(planId: string, category?: 1 | 3 | 6 | 12): Promise<{ checkoutUrl: string; subscriptionId: string }> {
   const user = auth.currentUser;
   if (!user) {
     throw new Error('Usuário não autenticado');
   }
+  
+  // Buscar dados do plano
+  const plan = await getPlanById(planId);
+  if (!plan) {
+    throw new Error('Plano não encontrado');
+  }
+  
+  // Usar a categoria fornecida ou a padrão do plano
+  const planCategory = category || plan.category || 1;
+  
+  // Calcular preço baseado na categoria (se o plano tiver preços diferentes por categoria)
+  // Por enquanto, usar o preço do plano diretamente
+  const price = plan.price / 100; // Converter de centavos para reais
   
   const token = await user.getIdToken();
   const response = await fetch(
@@ -181,20 +194,65 @@ export async function createSubscription(planId: string): Promise<{ checkoutUrl:
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ planId })
+      body: JSON.stringify({
+        planId: plan.id,
+        planName: plan.name,
+        price: price,
+        category: planCategory,
+        likeLimit: plan.likeLimit,
+        messageLimit: plan.messageLimit
+      })
     }
   );
   
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || 'Erro ao criar assinatura');
+    let errorMessage = 'Erro ao criar assinatura';
+    try {
+      const error = await response.json();
+      errorMessage = error.error || error.message || error.details || errorMessage;
+      console.error('Erro na resposta:', error);
+    } catch (e) {
+      // Se não conseguir parsear JSON, usar o status
+      errorMessage = `Erro ${response.status}: ${response.statusText}`;
+    }
+    throw new Error(errorMessage);
   }
   
   const result = await response.json();
+  console.log('Resposta da função createAsaasSubscription:', result);
+  
   return {
-    checkoutUrl: result.invoiceUrl || result.checkoutUrl,
-    subscriptionId: result.subscriptionId
+    checkoutUrl: result.invoiceUrl || result.checkoutUrl || null,
+    subscriptionId: result.subscriptionId || result.subscriptionId
   };
+}
+
+/**
+ * Buscar URL de pagamento de uma assinatura
+ */
+export async function getSubscriptionPaymentUrl(subscriptionId: string): Promise<string | null> {
+  const user = auth.currentUser;
+  if (!user) {
+    throw new Error('Usuário não autenticado');
+  }
+  
+  try {
+    // Buscar assinatura no Firestore
+    const subscriptionRef = doc(db, 'activeSubscriptions', user.uid);
+    const subscriptionSnap = await getDoc(subscriptionRef);
+    
+    if (subscriptionSnap.exists()) {
+      const data = subscriptionSnap.data();
+      if (data.asaasSubscriptionId === subscriptionId && data.invoiceUrl) {
+        return data.invoiceUrl;
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Erro ao buscar URL de pagamento:', error);
+    return null;
+  }
 }
 
 /**

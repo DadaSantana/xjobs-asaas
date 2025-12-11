@@ -58,7 +58,11 @@ interface RecipientData {
   mother_name?: string;
 }
 
-export const createRecipient = onRequest(async (request, response) => {
+export const createRecipient = onRequest({
+  maxInstances: 10,
+  timeoutSeconds: 540,
+  memory: '256MiB'
+}, async (request, response) => {
   // Configurar CORS
   response.set('Access-Control-Allow-Origin', '*');
   response.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -375,7 +379,11 @@ interface PagarmeRecipientData {
 });
 
 // Função para atualizar o status de verificação do recipient
-export const updateRecipientVerification = onRequest(async (request, response) => {
+export const updateRecipientVerification = onRequest({
+  maxInstances: 10,
+  timeoutSeconds: 540,
+  memory: '256MiB'
+}, async (request, response) => {
   // Configurar CORS
   response.set('Access-Control-Allow-Origin', '*');
   response.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -476,7 +484,11 @@ export const updateRecipientVerification = onRequest(async (request, response) =
 }); 
 
 // Função para gerar link de KYC (Prova de Vida)
-export const generateKycLinkV2 = onRequest(async (request, response) => {
+export const generateKycLinkV2 = onRequest({
+  maxInstances: 10,
+  timeoutSeconds: 540,
+  memory: '256MiB'
+}, async (request, response) => {
   // Configurar CORS
   response.set('Access-Control-Allow-Origin', '*');
   response.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -637,7 +649,11 @@ export const generateKycLinkV2 = onRequest(async (request, response) => {
   }
 });
 
-export const checkRecipient = onRequest(async (request, response) => {
+export const checkRecipient = onRequest({
+  maxInstances: 10,
+  timeoutSeconds: 540,
+  memory: '256MiB'
+}, async (request, response) => {
   // Configurar CORS
   response.set('Access-Control-Allow-Origin', '*');
   response.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');

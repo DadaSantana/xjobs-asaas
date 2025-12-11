@@ -11,7 +11,11 @@ if (!getApps().length) {
 
 const db = getFirestore();
 
-export const forceUpdateUserEmail = onCall(async (request) => {
+export const forceUpdateUserEmail = onCall({
+  maxInstances: 10,
+  timeoutSeconds: 540,
+  memory: '256MiB'
+}, async (request) => {
   try {
     const uid = request.auth?.uid;
     if (!uid) {

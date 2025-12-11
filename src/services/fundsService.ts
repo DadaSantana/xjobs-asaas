@@ -197,6 +197,7 @@ export class FundsService {
   // Listar transações do freelancer
   static async getFreelancerTransactions(freelancerId: string): Promise<FundTransaction[]> {
     try {
+      // Buscar transações de fundTransactions
       const q = query(
         collection(db, 'fundTransactions'),
         where('toUserId', '==', freelancerId),
@@ -239,6 +240,59 @@ export class FundsService {
         
         txs.push(tx);
       }
+
+      // Buscar transações de adiantamento (advanceTransactions)
+      try {
+        const advanceQ = query(
+          collection(db, 'advanceTransactions'),
+          where('freelancerId', '==', freelancerId),
+          orderBy('createdAt', 'desc')
+        );
+        const advanceSnap = await getDocs(advanceQ);
+        
+        for (const doc of advanceSnap.docs) {
+          const advanceTx = doc.data();
+          const tx: FundTransaction = {
+            id: doc.id,
+            projectId: advanceTx.projectId,
+            type: advanceTx.type as FundTransaction['type'],
+            amount: Number(advanceTx.amount || 0),
+            description: advanceTx.description || '',
+            toUserId: advanceTx.freelancerId,
+            status: advanceTx.status || 'pending',
+            gateway: advanceTx.gateway,
+            asaasAnticipationId: advanceTx.asaasAnticipationId,
+            advanceRequestId: advanceTx.advanceRequestId,
+            createdAt: advanceTx.createdAt,
+            processedAt: advanceTx.processedAt
+          };
+          
+          // Enriquecer com dados do projeto
+          if (!tx.projectTitle && tx.projectId) {
+            try {
+              const projectDoc = await getDoc(doc(db, 'projects', tx.projectId));
+              if (projectDoc.exists()) {
+                const projectData = projectDoc.data();
+                tx.projectTitle = projectData.title || 'Projeto';
+              }
+            } catch (projectError) {
+              console.warn('Erro ao buscar dados do projeto:', projectError);
+              tx.projectTitle = 'Projeto';
+            }
+          }
+          
+          txs.push(tx);
+        }
+      } catch (advanceError) {
+        console.warn('Erro ao buscar transações de adiantamento:', advanceError);
+      }
+      
+      // Ordenar todas as transações por data (mais recente primeiro)
+      txs.sort((a, b) => {
+        const dateA = a.createdAt?.toDate?.() || new Date(0);
+        const dateB = b.createdAt?.toDate?.() || new Date(0);
+        return dateB.getTime() - dateA.getTime();
+      });
       
       return txs;
     } catch (e) {
@@ -805,6 +859,28 @@ export class FundsService {
       console.log('getFreelancerBalance: processingWithdrawals:', processingWithdrawals);
       console.log('getFreelancerBalance: releasedByAsaas:', releasedByAsaas);
 
+      // Buscar adiantamentos pendentes (aguardando aprovação)
+      let processingAdvances = 0;
+      try {
+        const pendingAdvancesQuery = query(
+          collection(db, 'advanceTransactions'),
+          where('freelancerId', '==', freelancerId),
+          where('type', '==', 'advance_payment'),
+          where('status', '==', 'pending')
+        );
+        const pendingAdvancesSnapshot = await getDocs(pendingAdvancesQuery);
+        
+        pendingAdvancesSnapshot.forEach(doc => {
+          const advanceTx = doc.data();
+          const amount = Number(advanceTx.amount || 0);
+          processingAdvances += amount;
+        });
+        
+        console.log('getFreelancerBalance: processingAdvances (adiantamentos pendentes):', processingAdvances);
+      } catch (advanceError) {
+        console.warn('getFreelancerBalance: Erro ao buscar adiantamentos pendentes:', advanceError);
+      }
+
       // Buscar liberações para calcular saldo disponível vs bloqueado
       const releasesQuery = query(
         collection(db, 'fundReleases'),
@@ -817,11 +893,11 @@ export class FundsService {
       let blockedForRelease = 0;
       const now = new Date();
 
-      // Buscar adiantamentos aprovados para subtrair do bloqueado
+      // Buscar adiantamentos (aprovados, processando e pendentes) para subtrair do bloqueado
       const advancesQuery = query(
         collection(db, 'advanceRequests'),
         where('freelancerId', '==', freelancerId),
-        where('status', 'in', ['approved', 'processing', 'completed'])
+        where('status', 'in', ['approved', 'processing', 'completed', 'pending'])
       );
       const advancesSnapshot = await getDocs(advancesQuery);
       const advancedAmountsByProject = new Map<string, number>();
@@ -836,6 +912,30 @@ export class FundsService {
         }
         advancedAmountsByProject.set(projectId, advancedAmountsByProject.get(projectId)! + requestedAmount);
       });
+      
+      // Também buscar de advanceTransactions para garantir que pegamos todos os adiantamentos
+      try {
+        const advanceTxsQuery = query(
+          collection(db, 'advanceTransactions'),
+          where('freelancerId', '==', freelancerId),
+          where('type', '==', 'advance_payment')
+        );
+        const advanceTxsSnapshot = await getDocs(advanceTxsQuery);
+        
+        advanceTxsSnapshot.forEach(doc => {
+          const advanceTx = doc.data();
+          const projectId = advanceTx.projectId;
+          const amount = Number(advanceTx.amount || 0);
+          
+          if (!advancedAmountsByProject.has(projectId)) {
+            advancedAmountsByProject.set(projectId, 0);
+          }
+          // Usar o valor líquido (netValue) que já foi descontado a taxa
+          advancedAmountsByProject.set(projectId, advancedAmountsByProject.get(projectId)! + amount);
+        });
+      } catch (advanceTxError) {
+        console.warn('getFreelancerBalance: Erro ao buscar advanceTransactions:', advanceTxError);
+      }
       
       console.log('getFreelancerBalance: Adiantamentos encontrados por projeto:', Object.fromEntries(advancedAmountsByProject));
 
@@ -895,16 +995,17 @@ export class FundsService {
 
       // Calcular os 4 saldos principais
       const pendingAmount = totalEarnings - totalReleased; // Ainda não liberado
-      const availableBalance = Math.max(availableForWithdraw - totalWithdrawn - processingWithdrawals, 0); // Disponível para saque
+      const availableBalance = Math.max(availableForWithdraw - totalWithdrawn - processingWithdrawals - processingAdvances, 0); // Disponível para saque
       const blockedBalance = blockedForRelease; // Bloqueado (cartão de crédito - 35 dias)
       const releasedBalance = releasedByAsaas; // Confirmado pelo Asaas
-      const processingBalance = processingWithdrawals; // Em processamento
+      const processingBalance = processingWithdrawals + processingAdvances; // Em processamento (saques + adiantamentos pendentes)
 
       console.log('getFreelancerBalance: Resumo final:', {
         totalEarnings,
         totalReleased,
         totalWithdrawn,
         processingWithdrawals,
+        processingAdvances,
         pendingAmount,
         availableBalance,
         releasedBalance,

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar, Clock, DollarSign, TrendingUp, Eye, Heart, Briefcase, Send, Star, User } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -144,18 +145,85 @@ const VisaoGeral = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-            Olá, {userProfile?.name?.split(' ')[0]}! 👋
-          </h1>
-          <p className="text-gray-600 mt-2 text-sm sm:text-base">
-            Encontre projetos incríveis e faça sua carreira decolar
-          </p>
+      <div className="min-h-screen w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-6 pb-8">
+        {/* Header Skeleton */}
+        <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+          <div className="flex-1">
+            <Skeleton className="h-8 sm:h-9 w-64 mb-2" />
+            <Skeleton className="h-5 w-80" />
+          </div>
+          <Skeleton className="h-9 w-full sm:w-40" />
         </div>
-        <div className="text-center py-8">
-          <p className="text-gray-500">Carregando dados...</p>
+
+        {/* Stats Cards Skeleton */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          {[1, 2, 3, 4].map((i) => (
+            <Card key={i} className="p-3 sm:p-4">
+              <div className="flex flex-col sm:flex-row items-center sm:justify-between gap-2">
+                <div className="text-center sm:text-left w-full">
+                  <Skeleton className="h-4 w-24 mx-auto sm:mx-0 mb-2" />
+                  <Skeleton className="h-6 w-20 mx-auto sm:mx-0" />
+                </div>
+                <Skeleton className="h-10 w-10 rounded-full" />
+              </div>
+            </Card>
+          ))}
         </div>
+
+        {/* Quick Actions Skeleton */}
+        <Card className="p-3 sm:p-4">
+          <Skeleton className="h-6 w-32 mb-3" />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-12 sm:h-14" />
+            ))}
+          </div>
+        </Card>
+
+        {/* Projetos Recomendados Skeleton */}
+        <Card className="p-3 sm:p-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+            <Skeleton className="h-6 w-48" />
+            <Skeleton className="h-8 w-24" />
+          </div>
+          <div className="space-y-3">
+            {[1, 2].map((i) => (
+              <div key={i} className="p-3 bg-gray-50 rounded-lg">
+                <div className="flex flex-col sm:flex-row justify-between items-start mb-2 gap-2">
+                  <Skeleton className="h-5 w-3/4" />
+                  <Skeleton className="h-5 w-20" />
+                </div>
+                <Skeleton className="h-4 w-full mb-2" />
+                <Skeleton className="h-4 w-2/3 mb-2" />
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                  <Skeleton className="h-5 w-32" />
+                  <Skeleton className="h-8 w-20" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* Meus Projetos Selecionados Skeleton */}
+        <Card className="p-3 sm:p-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+            <Skeleton className="h-6 w-56" />
+            <Skeleton className="h-8 w-28" />
+          </div>
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="p-3 bg-gray-50 rounded-lg">
+                <div className="flex flex-col sm:flex-row justify-between items-start mb-2 gap-2">
+                  <Skeleton className="h-5 w-3/4" />
+                  <Skeleton className="h-5 w-20" />
+                </div>
+                <Skeleton className="h-4 w-full mb-2" />
+                <Skeleton className="h-4 w-2/3 mb-2" />
+                <Skeleton className="h-5 w-32" />
+              </div>
+            ))}
+          </div>
+        </Card>
       </div>
     );
   }

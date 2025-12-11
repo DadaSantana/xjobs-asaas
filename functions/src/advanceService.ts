@@ -2,7 +2,7 @@
  * Firebase Functions para sistema de adiantamento de valores
  */
 
-import * as functions from 'firebase-functions';
+import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import cors from 'cors';
 import { 
@@ -335,6 +335,9 @@ export const processAdvanceRequest = functions.https.onRequest(async (req, res) 
       });
 
       // Criar transação de adiantamento
+      // Status será 'completed' apenas quando o Asaas realmente creditar (CREDITED)
+      // Caso contrário, fica como 'pending' (em processamento)
+      const isCompleted = anticipation.status === 'CREDITED' || anticipation.status === 'APPROVED';
       const advanceTransaction = {
         advanceRequestId: advanceId,
         freelancerId: advance.freelancerId,
@@ -342,7 +345,7 @@ export const processAdvanceRequest = functions.https.onRequest(async (req, res) 
         type: 'advance_payment',
         amount: anticipation.netValue,
         description: `Antecipação Asaas - Valor: R$ ${anticipation.value.toFixed(2)} | Taxa Asaas: R$ ${anticipation.fee.toFixed(2)}`,
-        status: anticipation.status === 'PENDING' ? 'pending' : 'completed',
+        status: isCompleted ? 'completed' : 'pending',
         gateway: 'asaas',
         asaasAnticipationId: anticipation.id,
         gatewayResponse: anticipation,
@@ -529,27 +532,140 @@ export const approveAdvanceRequest = functions.https.onRequest(async (req, res) 
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
-      // Processar automaticamente
-      // Processar automaticamente chamando a função diretamente
-      const processResponse = await fetch(
-        'https://processadvancerequest-bo5fg4zxxq-uc.a.run.app',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': req.headers.authorization as string
-          },
-          body: JSON.stringify({ advanceId })
-        }
-      );
+      // Processar automaticamente - CHAMADA DIRETA AO INVÉS DE HTTP
+      // Buscar solicitação de adiantamento
+      const advanceRef = db.collection('advanceRequests').doc(advanceId);
+      const advanceDoc = await advanceRef.get();
 
-      if (!processResponse.ok) {
-        const error = await processResponse.json();
-        throw new Error(error.message || 'Erro ao processar adiantamento');
+      if (!advanceDoc.exists) {
+        res.status(404).json({ error: 'Adiantamento não encontrado' });
+        return;
       }
 
-      const result = await processResponse.json();
-      res.status(200).json(result);
+      const advance = advanceDoc.data();
+
+      if (advance?.status !== 'approved') {
+        res.status(400).json({ error: 'Adiantamento não está aprovado' });
+        return;
+      }
+
+      // Validar que o pagamento é de cartão de crédito e ainda está bloqueado
+      const projectPaymentQuery = await db.collection('projectPayments')
+        .where('projectId', '==', advance.projectId)
+        .where('freelancerId', '==', advance.freelancerId)
+        .limit(1)
+        .get();
+
+      if (projectPaymentQuery.empty) {
+        res.status(404).json({ error: 'Pagamento do projeto não encontrado' });
+        return;
+      }
+
+      const projectPayment = projectPaymentQuery.docs[0].data();
+      const asaasPaymentId = projectPayment.asaasPaymentId;
+
+      if (!asaasPaymentId) {
+        res.status(400).json({ 
+          error: 'ID do pagamento no Asaas não encontrado' 
+        });
+        return;
+      }
+
+      // Simular e criar antecipação
+      const simulation = await simulateAnticipation(asaasPaymentId);
+      
+      if (simulation.isDocumentationRequired) {
+        await advanceRef.update({
+          status: 'rejected',
+          rejectionReason: 'Documentação adicional necessária para antecipação',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        res.status(400).json({ 
+          error: 'Documentação adicional é necessária para este tipo de antecipação' 
+        });
+        return;
+      }
+
+      const anticipation = await createAnticipation(asaasPaymentId);
+      
+      await advanceRef.update({
+        status: 'processed',
+        asaasAnticipationId: anticipation.id,
+        anticipationStatus: anticipation.status,
+        asaasValue: anticipation.value,
+        asaasNetValue: anticipation.netValue,
+        asaasFee: anticipation.fee,
+        processedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // Criar transações
+      const isCompleted = anticipation.status === 'CREDITED' || anticipation.status === 'APPROVED';
+      await db.collection('advanceTransactions').add({
+        advanceRequestId: advanceId,
+        freelancerId: advance.freelancerId,
+        projectId: advance.projectId,
+        type: 'advance_payment',
+        amount: anticipation.netValue,
+        description: `Antecipação Asaas - Valor: R$ ${anticipation.value.toFixed(2)} | Taxa Asaas: R$ ${anticipation.fee.toFixed(2)}`,
+        status: isCompleted ? 'completed' : 'pending',
+        gateway: 'asaas',
+        asaasAnticipationId: anticipation.id,
+        gatewayResponse: anticipation,
+        processedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      await db.collection('advanceTransactions').add({
+        advanceRequestId: advanceId,
+        freelancerId: advance.freelancerId,
+        projectId: advance.projectId,
+        type: 'anticipation_fee',
+        amount: anticipation.fee,
+        description: `Taxa de antecipação Asaas`,
+        status: 'completed',
+        gateway: 'asaas',
+        processedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // Atualizar estatísticas
+      const statsRef = db.collection('freelancerAdvanceStats').doc(advance.freelancerId);
+      const statsDoc = await statsRef.get();
+      
+      const stats = statsDoc.exists ? statsDoc.data() : {
+        freelancerId: advance.freelancerId,
+        totalAdvancesRequested: 0,
+        totalAdvancesApproved: 0,
+        totalAdvancesRejected: 0,
+        totalAmountAdvanced: 0,
+        totalFeesCharged: 0,
+        monthlyAdvancesCount: 0,
+        monthlyAmountAdvanced: 0,
+        hasActiveAdvance: false,
+        canRequestAdvance: true
+      };
+
+      await statsRef.set({
+        ...stats,
+        totalAdvancesApproved: (stats?.totalAdvancesApproved || 0) + 1,
+        totalAmountAdvanced: (stats?.totalAmountAdvanced || 0) + anticipation.value,
+        totalFeesCharged: (stats?.totalFeesCharged || 0) + anticipation.fee,
+        hasActiveAdvance: false,
+        lastAdvanceDate: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      res.status(200).json({
+        success: true,
+        advanceId,
+        asaasAnticipationId: anticipation.id,
+        anticipationStatus: anticipation.status,
+        value: anticipation.value,
+        netValue: anticipation.netValue,
+        asaasFee: anticipation.fee,
+        message: 'Antecipação solicitada com sucesso no Asaas'
+      });
 
     } catch (error) {
       console.error('[Advance] Erro ao aprovar adiantamento:', error);
@@ -628,6 +744,92 @@ export const rejectAdvanceRequest = functions.https.onRequest(async (req, res) =
       console.error('[Advance] Erro ao rejeitar adiantamento:', error);
       res.status(500).json({
         error: 'Erro ao rejeitar adiantamento',
+        details: error instanceof Error ? error.message : 'Erro desconhecido'
+      });
+    }
+  });
+});
+
+/**
+ * Firebase Function: Corrigir status de transações antigas de adiantamento
+ * POST /fixAdvanceTransactionsStatus
+ * 
+ * Esta função corrige transações que foram criadas antes da atualização
+ * e estão com status 'completed' mas o Asaas ainda não aprovou (status PENDING)
+ */
+export const fixAdvanceTransactionsStatus = functions.https.onRequest(async (req, res) => {
+  return corsHandler(req, res, async () => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Método não permitido' });
+      return;
+    }
+
+    try {
+      console.log('[Advance] Iniciando correção de status de transações antigas...');
+
+      // Buscar todas as transações de adiantamento com status 'completed'
+      const transactionsQuery = await db.collection('advanceTransactions')
+        .where('type', '==', 'advance_payment')
+        .where('status', '==', 'completed')
+        .get();
+
+      console.log(`[Advance] Encontradas ${transactionsQuery.size} transações com status 'completed'`);
+
+      let correctedCount = 0;
+      const batch = db.batch();
+      let batchCount = 0;
+
+      for (const doc of transactionsQuery.docs) {
+        const transaction = doc.data();
+        const gatewayResponse = transaction.gatewayResponse;
+
+        // Verificar se o status do Asaas é PENDING
+        if (gatewayResponse && gatewayResponse.status === 'PENDING') {
+          console.log(`[Advance] Corrigindo transação ${doc.id}: status do Asaas é PENDING`);
+          
+          batch.update(doc.ref, {
+            status: 'pending',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+          
+          correctedCount++;
+          batchCount++;
+
+          // Firestore limita batches a 500 operações
+          if (batchCount >= 500) {
+            await batch.commit();
+            batchCount = 0;
+          }
+        }
+      }
+
+      // Commit do batch restante
+      if (batchCount > 0) {
+        await batch.commit();
+      }
+
+      console.log(`[Advance] Correção concluída: ${correctedCount} transações corrigidas`);
+
+      res.status(200).json({
+        success: true,
+        message: `Correção concluída: ${correctedCount} transações atualizadas de 'completed' para 'pending'`,
+        totalFound: transactionsQuery.size,
+        corrected: correctedCount
+      });
+
+    } catch (error) {
+      console.error('[Advance] Erro ao corrigir status das transações:', error);
+      res.status(500).json({
+        error: 'Erro ao corrigir status das transações',
         details: error instanceof Error ? error.message : 'Erro desconhecido'
       });
     }
