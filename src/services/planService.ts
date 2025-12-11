@@ -87,7 +87,7 @@ export async function createPlan(planData: CreatePlanInput): Promise<string> {
   
   const token = await user.getIdToken();
   const response = await fetch(
-    'https://createasaasplan-bo5fg4zxxq-uc.a.run.app',
+    'https://us-central1-xjobs-a43d2.cloudfunctions.net/createAsaasPlan',
     {
       method: 'POST',
       headers: {
@@ -118,7 +118,7 @@ export async function updatePlan(planData: UpdatePlanInput): Promise<void> {
   
   const token = await user.getIdToken();
   const response = await fetch(
-    'https://updateasaasplan-bo5fg4zxxq-uc.a.run.app',
+    'https://us-central1-xjobs-a43d2.cloudfunctions.net/updateAsaasPlan',
     {
       method: 'PUT',
       headers: {
@@ -146,7 +146,7 @@ export async function deletePlan(planId: string): Promise<void> {
   
   const token = await user.getIdToken();
   const response = await fetch(
-    'https://deleteasaasplan-bo5fg4zxxq-uc.a.run.app',
+    'https://us-central1-xjobs-a43d2.cloudfunctions.net/deleteAsaasPlan',
     {
       method: 'DELETE',
       headers: {

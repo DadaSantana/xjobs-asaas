@@ -69,7 +69,7 @@ export function AdvanceRequestDialog({
         throw new Error('Usuário não autenticado');
       }
 
-      const response = await fetch('https://simulateadvancerequest-bo5fg4zxxq-uc.a.run.app', {
+      const response = await fetch('https://us-central1-xjobs-a43d2.cloudfunctions.net/simulateAdvanceRequest', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
