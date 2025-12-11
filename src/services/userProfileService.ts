@@ -483,10 +483,9 @@ export class UserProfileService {
   static async updateLikesRemaining(userId: string, newCount: number): Promise<void> {
     try {
       const userRef = doc(db, 'users', userId);
-      await updateDoc(userRef, {
-        likesRemaining: newCount,
-        updatedAt: Timestamp.now()
-      });
+      // Curtidas agora são gerenciadas pelo planUsageService
+      // Esta função não é mais necessária
+      console.warn('updateLikesRemaining está deprecated - use planUsageService');
     } catch (error) {
       console.error('Erro ao atualizar curtidas restantes:', error);
       throw new Error('Falha ao atualizar curtidas restantes');

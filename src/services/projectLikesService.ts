@@ -187,13 +187,8 @@ export class ProjectLikesService {
         
         transaction.update(projectRef, filteredData);
 
-        // Decrementar curtidas do freelancer (se não for ilimitado)
-        if (likesRemaining > 0) {
-          const userRef = doc(db, 'users', data.freelancerId);
-          transaction.update(userRef, {
-            likesRemaining: likesRemaining - 1
-          });
-        }
+        // Curtidas são gerenciadas pelo planUsageService
+        // A contagem já foi feita na verificação inicial
 
         return newLike;
       });
@@ -288,16 +283,8 @@ export class ProjectLikesService {
         console.log('Dados filtrados para atualização (unlikeProject):', filteredData);
         transaction.update(projectRef, filteredData);
 
-        // Devolver curtida ao freelancer
-        const freelancerProfile = await UserProfileService.getUserProfile(freelancerId);
-        const currentLikes = freelancerProfile?.likesRemaining ?? -1;
-        
-        if (currentLikes >= 0) { // Se não for ilimitado
-          const userRef = doc(db, 'users', freelancerId);
-          transaction.update(userRef, {
-            likesRemaining: currentLikes + 1
-          });
-        }
+        // Curtidas são gerenciadas pelo planUsageService
+        // A reversão será feita pelo sistema de contadores se necessário
       });
     } catch (error) {
       console.error('Erro ao remover curtida:', error);
@@ -432,11 +419,15 @@ export class ProjectLikesService {
         }
       });
 
+      // Buscar limites atuais do plano
+      const { getPlanUsage } = await import('./planUsageService');
+      const usage = await getPlanUsage(freelancerId);
+
       return {
         totalLikes: likedProjects.length,
         acceptedLikes,
         pendingLikes,
-        likesRemaining: freelancerProfile?.likesRemaining ?? -1 // -1 = ilimitado
+        likesRemaining: usage.likeLimit === null ? -1 : Math.max(0, (usage.likeLimit || 0) - usage.likesUsed)
       };
     } catch (error) {
       console.error('Erro ao buscar estatísticas:', error);
