@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { LayoutDashboard, Search, Briefcase, Wallet, LifeBuoy, Home, MessageSquare, DollarSign, HelpCircle, Settings, FileText, ChevronDown, ChevronUp } from "lucide-react";
 import { useAppSelector } from "@/hooks/redux";
@@ -25,6 +25,7 @@ interface FreelancerSidebarProps {
 
 export default function FreelancerSidebar({ onRequestRecipientSetup }: FreelancerSidebarProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const userProfile = useAppSelector(state => state.auth.userProfile);
   const { hasRecipient } = useRecipient();
   const [balance, setBalance] = useState({
@@ -252,51 +253,8 @@ export default function FreelancerSidebar({ onRequestRecipientSetup }: Freelance
                     </div>
                     <button
                       className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-xs font-medium py-2.5 rounded-lg transition-all duration-200 shadow-sm hover:shadow"
-                      onClick={async () => {
-                        try {
-                          if (!hasRecipient) {
-                            if (onRequestRecipientSetup) {
-                              onRequestRecipientSetup();
-                            }
-                            return;
-                          }
-                          
-                          if (balance.availableBalance <= 2.00) {
-                            alert('Saldo insuficiente. É necessário pelo menos R$ 2,00 para cobrir a taxa do PIX.');
-                            return;
-                          }
-                          
-                          const netAmount = balance.availableBalance - 2.00;
-                          const confirmMessage = `Você receberá R$ ${netAmount.toFixed(2)} (R$ ${balance.availableBalance.toFixed(2)} - R$ 2,00 de taxa PIX). Confirmar saque?`;
-                          
-                          if (!window.confirm(confirmMessage)) {
-                            return;
-                          }
-                          const { auth } = await import('@/lib/firebase');
-                          const token = await auth.currentUser?.getIdToken();
-                          if (!token) return;
-                          const resp = await fetch('https://us-central1-xjobs-a43d2.cloudfunctions.net/processWithdrawalAsaas', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                            body: JSON.stringify({ amount: balance.availableBalance })
-                          });
-                          if (!resp.ok) {
-                            const t = await resp.text();
-                            console.error('Falha no saque:', t);
-                            return;
-                          }
-                          try {
-                            const summary = await FundsService.getFreelancerBalance(auth.currentUser!.uid);
-                            setBalance(prev => ({ 
-                              ...prev, 
-                              availableBalance: summary.availableBalance, 
-                              totalReleased: summary.totalReleased,
-                              processingBalance: summary.processingBalance || 0,
-                            }));
-                          } catch {}
-                        } catch (e) {
-                          console.error('Erro ao solicitar saque:', e);
-                        }
+                      onClick={() => {
+                        navigate('/freelancer/minhas-financas');
                       }}
                     >
                       Solicitar Saque
