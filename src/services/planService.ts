@@ -301,4 +301,3 @@ export function getCategoryLabel(category: 1 | 3 | 6 | 12): string {
   return labelMap[category];
 }
 
-// Force deploy Thu Dec 11 17:28:31 -03 2025
