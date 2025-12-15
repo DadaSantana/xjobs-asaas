@@ -541,121 +541,94 @@ const MinhasFinancas = () => {
         <CardHeader>
           <CardTitle>Histórico de Transações</CardTitle>
           <CardDescription>
-            Últimas transações e pagamentos recebidos
+            Entradas e saídas de saldo (liberações, saques e adiantamentos)
           </CardDescription>
         </CardHeader>
         <CardContent>
           {transactions.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               <p className="text-sm md:text-base">Nenhuma transação encontrada</p>
-              <p className="text-xs md:text-sm">As transações aparecerão aqui quando você receber pagamentos</p>
+              <p className="text-xs md:text-sm">As transações aparecerão aqui quando você receber pagamentos, fizer saques ou solicitar adiantamentos.</p>
             </div>
           ) : (
-            <div className="space-y-3 md:space-y-0">
-              {/* Mobile Layout */}
-              <div className="block md:hidden space-y-3">
-                {transactions.map((tx) => {
-                  const isAdvance = tx.type === 'advance_payment';
-                  const isAdvanceFee = tx.type === 'anticipation_fee';
-                  return (
-                    <div key={tx.id} className="border rounded-lg p-3 space-y-2">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="font-medium text-sm">{tx.projectTitle || tx.projectId || 'Projeto'}</div>
-                          <div className="text-xs text-gray-500">
-                            {isAdvance && '⚡ Adiantamento'}
-                            {isAdvanceFee && '💳 Taxa de Adiantamento'}
-                            {!isAdvance && !isAdvanceFee && (tx.releaseType === 'partial' ? `${tx.percentage || 0}%` : '100%')}
-                          </div>
+            <div className="space-y-3">
+              {transactions.map((tx) => {
+                const isAdvance = tx.type === 'advance_payment';
+                const isAdvanceFee = tx.type === 'anticipation_fee';
+                const isWithdraw = tx.type === 'withdraw' || tx.type === 'withdrawal_completed' || tx.type === 'withdrawal_reversal';
+
+                let tipoLabel = '';
+                if (isAdvance) {
+                  tipoLabel = '⚡ Adiantamento (valor antecipado via Asaas)';
+                } else if (isAdvanceFee) {
+                  tipoLabel = '💳 Taxa de adiantamento (Asaas)';
+                } else if (tx.type === 'withdraw') {
+                  tipoLabel = '💰 Saque solicitado';
+                } else if (tx.type === 'withdrawal_completed') {
+                  tipoLabel = '💰 Saque concluído';
+                } else if (tx.type === 'withdrawal_reversal') {
+                  tipoLabel = '↩ Estorno de saque';
+                } else if (tx.type === 'release') {
+                  tipoLabel = tx.releaseType === 'partial' ? `Liberação ${tx.percentage || 0}%` : 'Liberação 100%';
+                } else if (tx.type === 'refund') {
+                  tipoLabel = 'Reembolso ao cliente';
+                } else if (tx.type === 'fee') {
+                  tipoLabel = 'Taxa da plataforma';
+                } else if (tx.type === 'hold') {
+                  tipoLabel = 'Bloqueio de valores (aguardando liberação)';
+                }
+
+                const isDebit = isAdvanceFee || tx.type === 'withdrawal_reversal' || tx.type === 'refund';
+
+                return (
+                  <div key={tx.id} className="border rounded-lg p-3 md:p-4 space-y-2">
+                    <div className="flex justify-between items-start gap-3">
+                      <div className="flex-1">
+                        <div className="font-medium text-sm md:text-base">
+                          {tx.projectTitle || tx.projectId || 'Movimentação de saldo'}
                         </div>
-                        <div className="text-right">
-                          <div className={`font-semibold text-sm ${isAdvanceFee ? 'text-red-600' : ''}`}>
-                            {isAdvanceFee && '- '}
-                            {formatCurrency(tx.amount || 0)}
-                          </div>
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                            tx.status === 'completed' 
-                              ? 'bg-green-100 text-green-800' 
-                              : tx.status === 'pending'
-                              ? 'bg-yellow-100 text-yellow-800'
-                              : 'bg-red-100 text-red-800'
-                          }`}>
-                            {tx.status === 'completed' ? 'Concluído' : 
-                             tx.status === 'pending' ? (isAdvance ? 'Em processamento' : 'Pendente') : 
-                             tx.status === 'failed' ? 'Falhou' : 
-                             tx.status === 'cancelled' ? 'Cancelado' : tx.status}
-                          </span>
+                        <div className="text-xs md:text-sm text-gray-500 mt-1">
+                          {tipoLabel || 'Movimentação financeira'}
                         </div>
                       </div>
-                      <div className="flex justify-between text-xs text-gray-500">
-                        <span>{isAdvance || isAdvanceFee ? 'Via Asaas' : `Cliente: ${tx.clientName || 'Cliente'}`}</span>
-                        <span>{tx.createdAt?.toDate ? format(tx.createdAt.toDate(), "dd/MM/yyyy", { locale: ptBR }) : '-'}</span>
+                      <div className="text-right">
+                        <div className={`font-semibold text-sm md:text-base ${
+                          isDebit ? 'text-red-600' : 'text-gray-900'
+                        }`}>
+                          {isDebit && '- '}
+                          {formatCurrency(tx.amount || 0)}
+                        </div>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mt-1 ${
+                          tx.status === 'completed' 
+                            ? 'bg-green-100 text-green-800' 
+                            : tx.status === 'pending' || tx.status === 'processing'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {tx.status === 'completed' ? 'Concluído' : 
+                           tx.status === 'pending' || tx.status === 'processing'
+                             ? (isAdvance ? 'Em processamento' : 'Pendente') 
+                             : tx.status === 'failed'
+                             ? 'Falhou'
+                             : tx.status === 'cancelled'
+                             ? 'Cancelado'
+                             : tx.status}
+                        </span>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-              
-              {/* Desktop Table */}
-              <div className="hidden md:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Data</TableHead>
-                      <TableHead>Projeto</TableHead>
-                      <TableHead>Tipo</TableHead>
-                      <TableHead>Valor</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {transactions.map((tx) => {
-                      const isAdvance = tx.type === 'advance_payment';
-                      const isAdvanceFee = tx.type === 'anticipation_fee';
-                      return (
-                        <TableRow key={tx.id}>
-                          <TableCell className="font-medium">
-                            {tx.createdAt?.toDate ? format(tx.createdAt.toDate(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }) : '-'}
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{tx.projectTitle || tx.projectId || 'Projeto'}</div>
-                              <div className="text-sm text-gray-500">
-                                {isAdvance && '⚡ Adiantamento (Asaas)'}
-                                {isAdvanceFee && '💳 Taxa de Adiantamento (2%)'}
-                                {!isAdvance && !isAdvanceFee && (tx.releaseType === 'partial' ? `Liberação ${tx.percentage || 0}%` : 'Liberação 100%')}
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {isAdvance && <Badge variant="outline" className="bg-blue-50 text-blue-700">Adiantamento</Badge>}
-                            {isAdvanceFee && <Badge variant="outline" className="bg-red-50 text-red-700">Taxa</Badge>}
-                            {!isAdvance && !isAdvanceFee && <Badge variant="outline" className="bg-green-50 text-green-700">Liberação</Badge>}
-                          </TableCell>
-                          <TableCell className={`font-semibold ${isAdvanceFee ? 'text-red-600' : ''}`}>
-                            {isAdvanceFee && '- '}
-                            {formatCurrency(tx.amount || 0)}
-                          </TableCell>
-                          <TableCell>
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              tx.status === 'completed' 
-                                ? 'bg-green-100 text-green-800' 
-                                : tx.status === 'pending'
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}>
-                              {tx.status === 'completed' ? 'Concluído' : 
-                               tx.status === 'pending' ? (isAdvance ? 'Aguardando aprovação' : 'Pendente') : 
-                               tx.status === 'failed' ? 'Falhou' : 
-                               tx.status === 'cancelled' ? 'Cancelado' : tx.status}
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                    <div className="flex justify-between items-center text-xs md:text-sm text-gray-500">
+                      <span>
+                        {tx.gateway === 'asaas' || isAdvance || isAdvanceFee || isWithdraw
+                          ? 'Via Asaas'
+                          : `Cliente: ${tx.clientName || 'Cliente'}`}
+                      </span>
+                      <span>
+                        {tx.createdAt?.toDate ? format(tx.createdAt.toDate(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }) : '-'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </CardContent>

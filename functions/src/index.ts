@@ -33,7 +33,8 @@ export {
   createAsaasCheckout,
   createAsaasSubscription,
   asaasWebhook,
-  checkAsaasPaymentStatus
+  checkAsaasPaymentStatus,
+  reprocessAsaasWebhookEvents
 } from './asaasPlans';
 // transferToFreelancerAsaas - REMOVIDA (não utilizada)
 

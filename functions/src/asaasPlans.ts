@@ -504,9 +504,10 @@ export const asaasWebhook = functions.https.onRequest(async (req, res) => {
         });
       }
 
-      // Processar eventos de pagamento
+      // Processar eventos de pagamento (inclui antecipações de pagamento)
       if (event === ASAAS_WEBHOOK_EVENTS.PAYMENT_CONFIRMED || 
-          event === ASAAS_WEBHOOK_EVENTS.PAYMENT_RECEIVED) {
+          event === ASAAS_WEBHOOK_EVENTS.PAYMENT_RECEIVED ||
+          event === 'PAYMENT_ANTICIPATED') {
         // Verificar se é pagamento de assinatura ou projeto
         const payment = webhookData.payment;
         const externalRef = payment?.externalReference as string;
@@ -547,6 +548,20 @@ export const asaasWebhook = functions.https.onRequest(async (req, res) => {
         await processSubscriptionInactivated(webhookData.subscription);
       }
 
+      // Processar eventos de transferência (saques via Asaas)
+      if (webhookData.transfer && webhookData.transfer.id && typeof event === 'string' && event.startsWith('TRANSFER_')) {
+        await processTransferEvent(event, webhookData.transfer);
+      }
+
+      // Processar eventos de antecipação de recebíveis (adiantamentos via Asaas)
+      if ((webhookData.receivableAnticipation && webhookData.receivableAnticipation.id) ||
+          (webhookData.anticipation && webhookData.anticipation.id)) {
+        const anticipation = webhookData.receivableAnticipation || webhookData.anticipation;
+        if (typeof event === 'string' && (event.startsWith('ANTICIPATION_') || event.startsWith('RECEIVABLE_ANTICIPATION_'))) {
+          await processAnticipationEvent(event, anticipation);
+        }
+      }
+
       // Marcar webhook como processado
       if (webhookDocRef) {
         await webhookDocRef.update({
@@ -564,6 +579,283 @@ export const asaasWebhook = functions.https.onRequest(async (req, res) => {
 });
 
 /**
+ * Processa eventos de transferência (saques via Asaas) vindos do webhook
+ * Atualiza a coleção 'withdrawRequests', que é utilizada pela UI e pelo cálculo de saldo.
+ */
+async function processTransferEvent(eventType: string, transfer: { id: string; status?: string; failReason?: string; [key: string]: unknown }) {
+  console.log('[Asaas Webhook] Processando evento de transferência (saque):', eventType, transfer.id);
+
+  try {
+    // Buscar a solicitação de saque pelo ID da transferência Asaas
+    const withdrawalQuery = await db.collection('withdrawRequests')
+      .where('transferId', '==', transfer.id)
+      .limit(1)
+      .get();
+
+    if (withdrawalQuery.empty) {
+      console.log('[Asaas Webhook] Solicitação de saque não encontrada para transferência:', transfer.id);
+      return;
+    }
+
+    const withdrawalDoc = withdrawalQuery.docs[0];
+    const withdrawal = withdrawalDoc.data() as FirebaseFirestore.DocumentData;
+
+    let newStatus: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled' = withdrawal.status || 'pending';
+    let statusMessage = withdrawal.statusMessage || '';
+
+    switch (eventType) {
+      case 'TRANSFER_CREATED':
+      case 'TRANSFER_PENDING':
+      case 'TRANSFER_IN_BANK_PROCESSING':
+      case 'TRANSFER_BLOCKED':
+        newStatus = 'processing';
+        statusMessage = 'Transferência em processamento no Asaas';
+        break;
+
+      case 'TRANSFER_DONE':
+        newStatus = 'completed';
+        statusMessage = 'Transferência concluída pelo Asaas';
+        break;
+
+      case 'TRANSFER_FAILED':
+        newStatus = 'failed';
+        statusMessage = `Transferência falhou: ${transfer.failReason || 'Erro no processamento'}`;
+        break;
+
+      case 'TRANSFER_CANCELLED':
+        newStatus = 'cancelled';
+        statusMessage = 'Transferência cancelada pelo Asaas';
+        break;
+
+      default:
+        console.log('[Asaas Webhook] Evento de transferência não mapeado:', eventType);
+        return;
+    }
+
+    await withdrawalDoc.ref.update({
+      status: newStatus,
+      transferStatus: transfer.status || withdrawal.transferStatus || null,
+      statusMessage,
+      lastWebhookEvent: eventType,
+      lastWebhookData: transfer,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      ...(newStatus === 'completed' ? { completedAt: admin.firestore.FieldValue.serverTimestamp() } : {})
+    });
+
+    console.log('[Asaas Webhook] Solicitação de saque atualizada:', withdrawalDoc.id, 'novo status:', newStatus);
+  } catch (error) {
+    console.error('[Asaas Webhook] Erro ao processar evento de transferência (saque):', error);
+  }
+}
+
+/**
+ * Processa eventos de antecipação (adiantamentos via Asaas) vindos do webhook
+ * Atualiza 'advanceRequests' e 'advanceTransactions' para refletir o status real.
+ */
+async function processAnticipationEvent(eventType: string, anticipation: { id: string; status?: string; [key: string]: unknown }) {
+  console.log('[Asaas Webhook] Processando evento de antecipação (adiantamento):', eventType, anticipation.id);
+
+  try {
+    // Buscar a solicitação de adiantamento pelo ID da antecipação Asaas
+    const advanceQuery = await db.collection('advanceRequests')
+      .where('asaasAnticipationId', '==', anticipation.id)
+      .limit(1)
+      .get();
+
+    if (advanceQuery.empty) {
+      console.log('[Asaas Webhook] Adiantamento não encontrado para antecipação:', anticipation.id);
+      return;
+    }
+
+    const advanceDoc = advanceQuery.docs[0];
+    const advance = advanceDoc.data() as FirebaseFirestore.DocumentData;
+
+    let newStatus: string = advance.status;
+    let statusMessage = advance.statusMessage || '';
+
+    // Normalizar prefixos de eventos (ANTICIPATION_* e RECEIVABLE_ANTICIPATION_*)
+    const normalizedEvent = eventType.startsWith('RECEIVABLE_ANTICIPATION_')
+      ? eventType.replace('RECEIVABLE_', '')
+      : eventType;
+
+    switch (normalizedEvent) {
+      case 'ANTICIPATION_PENDING':
+        newStatus = 'pending';
+        statusMessage = 'Antecipação em análise pelo Asaas';
+        break;
+
+      case 'ANTICIPATION_APPROVED':
+      case 'ANTICIPATION_CREDITED':
+        newStatus = 'completed';
+        statusMessage = 'Antecipação aprovada e creditada pelo Asaas';
+        break;
+
+      case 'ANTICIPATION_DEBITED':
+        // Débito posterior – manter status atual, mas registrar mensagem
+        statusMessage = 'Antecipação debitada pelo Asaas';
+        break;
+
+      case 'ANTICIPATION_DENIED':
+        newStatus = 'rejected';
+        statusMessage = 'Antecipação negada pelo Asaas';
+        break;
+
+      case 'ANTICIPATION_CANCELLED':
+        newStatus = 'cancelled';
+        statusMessage = 'Antecipação cancelada no Asaas';
+        break;
+
+      case 'ANTICIPATION_OVERDUE':
+        newStatus = 'failed';
+        statusMessage = 'Antecipação vencida no Asaas';
+        break;
+
+      default:
+        console.log('[Asaas Webhook] Evento de antecipação não mapeado:', eventType);
+        return;
+    }
+
+    // Atualizar solicitação de adiantamento
+    await advanceDoc.ref.update({
+      status: newStatus,
+      anticipationStatus: anticipation.status || advance.anticipationStatus || null,
+      statusMessage,
+      lastWebhookEvent: eventType,
+      lastWebhookData: anticipation,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      ...(newStatus === 'completed' ? { completedAt: admin.firestore.FieldValue.serverTimestamp() } : {}),
+      ...(newStatus === 'rejected' ? { rejectionReason: statusMessage } : {})
+    });
+
+    // Atualizar transações de adiantamento relacionadas (advanceTransactions)
+    const advanceTxQuery = await db.collection('advanceTransactions')
+      .where('asaasAnticipationId', '==', anticipation.id)
+      .where('type', '==', 'advance_payment')
+      .get();
+
+    if (!advanceTxQuery.empty) {
+      const batch = db.batch();
+      advanceTxQuery.docs.forEach(docSnap => {
+        const tx = docSnap.data() as FirebaseFirestore.DocumentData;
+
+        let txStatus = tx.status || 'pending';
+        if (newStatus === 'completed') {
+          txStatus = 'completed';
+        } else if (['rejected', 'cancelled', 'failed'].includes(newStatus)) {
+          txStatus = 'failed';
+        }
+
+        batch.update(docSnap.ref, {
+          status: txStatus,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      });
+
+      await batch.commit();
+      console.log('[Asaas Webhook] Transações de adiantamento atualizadas para antecipação:', anticipation.id);
+    }
+
+    console.log('[Asaas Webhook] Adiantamento atualizado:', advanceDoc.id, 'novo status:', newStatus);
+  } catch (error) {
+    console.error('[Asaas Webhook] Erro ao processar evento de antecipação (adiantamento):', error);
+  }
+}
+
+/**
+ * Firebase Function: Reprocessar eventos do Asaas a partir dos logs em `asaasWebhooks`
+ * POST /reprocessAsaasWebhookEvents
+ *
+ * Permite corrigir o estado de saques e adiantamentos reexecutando a lógica
+ * de transferência/antecipação baseada nos eventos já recebidos e armazenados.
+ */
+export const reprocessAsaasWebhookEvents = functions.https.onRequest(async (req, res) => {
+  corsHandler(req, res, async () => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Método não permitido' });
+      return;
+    }
+
+    try {
+      const { limit: rawLimit, onlyTransfers, onlyAnticipations } = req.body || {};
+      const limitValue = typeof rawLimit === 'number' && rawLimit > 0 && rawLimit <= 500 ? rawLimit : 100;
+
+      console.log('[Asaas Webhook Reprocess] Iniciando reprocessamento dos últimos', limitValue, 'webhooks...');
+
+      // IMPORTANTE: processar em ordem cronológica (mais antigos primeiro)
+      // para que o último evento reflita o estado final (ex: TRANSFER_DONE
+      // após TRANSFER_CREATED, e não o contrário).
+      const snapshot = await db.collection('asaasWebhooks')
+        .orderBy('receivedAt', 'asc')
+        .limit(limitValue)
+        .get();
+
+      let processedCount = 0;
+
+      for (const docSnap of snapshot.docs) {
+        const data = docSnap.data() as FirebaseFirestore.DocumentData;
+        const event = data.event as string;
+        const webhookData = data.data || {};
+
+        // Filtrar por tipo, se solicitado
+        const isTransferEvent = typeof event === 'string' && event.startsWith('TRANSFER_');
+        const isAnticipationEvent = typeof event === 'string' && (event.startsWith('ANTICIPATION_') || event.startsWith('RECEIVABLE_ANTICIPATION_'));
+        const isPaymentEvent =
+          typeof event === 'string' &&
+          (event === ASAAS_WEBHOOK_EVENTS.PAYMENT_CONFIRMED ||
+           event === ASAAS_WEBHOOK_EVENTS.PAYMENT_RECEIVED ||
+           event === 'PAYMENT_ANTICIPATED');
+
+        // Filtros opcionais
+        if (onlyTransfers && !isTransferEvent) continue;
+        if (onlyAnticipations && !isAnticipationEvent) continue;
+
+        if (isTransferEvent && webhookData.transfer && webhookData.transfer.id) {
+          await processTransferEvent(event, webhookData.transfer);
+          processedCount++;
+        }
+
+        if (isAnticipationEvent && (webhookData.receivableAnticipation || webhookData.anticipation)) {
+          const anticipation = webhookData.receivableAnticipation || webhookData.anticipation;
+          if (anticipation && anticipation.id) {
+            await processAnticipationEvent(event, anticipation);
+            processedCount++;
+          }
+        }
+
+        // Reprocessar pagamentos (inclui antecipações de pagamento)
+        if (!onlyTransfers && !onlyAnticipations && isPaymentEvent && webhookData.payment && webhookData.payment.id) {
+          await processPaymentConfirmed(webhookData.payment);
+          processedCount++;
+        }
+      }
+
+      console.log('[Asaas Webhook Reprocess] Reprocessamento concluído. Eventos aplicados:', processedCount);
+
+      res.status(200).json({
+        success: true,
+        processed: processedCount,
+        scanned: snapshot.size
+      });
+    } catch (error) {
+      console.error('[Asaas Webhook Reprocess] Erro ao reprocessar eventos:', error);
+      res.status(500).json({
+        error: 'Erro ao reprocessar eventos do Asaas',
+        details: error instanceof Error ? error.message : 'Erro desconhecido'
+      });
+    }
+  });
+});
+
+/**
  * Processa pagamento confirmado
  */
 async function processPaymentConfirmed(paymentData: { 
@@ -571,6 +863,9 @@ async function processPaymentConfirmed(paymentData: {
   billingType?: string; 
   clientPaymentDate?: string;
   confirmedDate?: string;
+  creditDate?: string;
+  estimatedCreditDate?: string;
+  anticipated?: boolean;
   value?: number;
   description?: string;
   externalReference?: string;
@@ -685,6 +980,9 @@ async function processExistingPayment(paymentDoc: FirebaseFirestore.DocumentSnap
   billingType?: string; 
   clientPaymentDate?: string;
   confirmedDate?: string;
+  creditDate?: string;
+  estimatedCreditDate?: string;
+  anticipated?: boolean;
   [key: string]: unknown 
 }) {
     const payment = paymentDoc.data();
@@ -698,19 +996,38 @@ async function processExistingPayment(paymentDoc: FirebaseFirestore.DocumentSnap
     // Determinar método de pagamento
     const paymentMethod = paymentData.billingType as string || 'UNDEFINED';
     
-    // Calcular data de disponibilidade
-    // PIX: Disponível imediatamente
-    // CREDIT_CARD: Disponível após 35 dias
-    const paidDate = paymentData.clientPaymentDate || paymentData.confirmedDate || new Date().toISOString().split('T')[0];
-    const paidTimestamp = admin.firestore.Timestamp.fromDate(new Date(paidDate));
-    
-    const availableDate = new Date(paidDate);
+    // Calcular data de pagamento (data em que o cliente efetivamente pagou)
+    const paidDateStr = paymentData.clientPaymentDate || paymentData.confirmedDate || new Date().toISOString().split('T')[0];
+    const paidDate = new Date(paidDateStr);
+    const paidTimestamp = admin.firestore.Timestamp.fromDate(paidDate);
+
+    // Calcular data de disponibilidade:
+    // - PIX e outros: disponível na data de pagamento
+    // - CREDIT_CARD padrão: disponível após 35 dias
+    // - CREDIT_CARD antecipado (PAYMENT_ANTICIPATED / anticipated=true): disponível imediatamente (data atual)
+    let availableDate: Date;
+
     if (paymentMethod === 'CREDIT_CARD') {
-      // Cartão de crédito: +35 dias
-      availableDate.setDate(availableDate.getDate() + 35);
+      const anyPayment: Record<string, unknown> = paymentData as Record<string, unknown>;
+      if (anyPayment.anticipated) {
+        // Antecipação feita diretamente no painel do Asaas:
+        // consideramos o valor disponível imediatamente para o freelancer.
+        availableDate = new Date();
+      } else if (anyPayment.creditDate) {
+        // Fluxo normal de cartão: usa data de crédito informada pelo Asaas
+        availableDate = new Date(anyPayment.creditDate as string);
+      } else if (anyPayment.estimatedCreditDate) {
+        availableDate = new Date(anyPayment.estimatedCreditDate as string);
+      } else {
+        // Fallback: 35 dias após a data de pagamento
+        availableDate = new Date(paidDate);
+        availableDate.setDate(availableDate.getDate() + 35);
+      }
+    } else {
+      // PIX / boleto etc: consideramos disponível na data de pagamento
+      availableDate = new Date(paidDate);
     }
-    // PIX e outros: disponível imediatamente
-    
+
     const availableTimestamp = admin.firestore.Timestamp.fromDate(availableDate);
 
     // Atualizar status do pagamento

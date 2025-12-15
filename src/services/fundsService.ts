@@ -833,8 +833,10 @@ export class FundsService {
       const totalReleased = Math.max(totalReleasedTx, totalReleasedRel);
 
       // Buscar saques (completados e em processamento)
+      // IMPORTANTE: usamos a coleção 'withdrawRequests', que é onde o backend
+      // registra os saques via Asaas (functions/src/withdrawalService.ts)
       const withdrawalsQuery = query(
-        collection(db, 'withdrawals'),
+        collection(db, 'withdrawRequests'),
         where('freelancerId', '==', freelancerId)
       );
       const withdrawalsSnapshot = await getDocs(withdrawalsQuery);
@@ -844,7 +846,7 @@ export class FundsService {
       let releasedByAsaas = 0;
       
       withdrawalsSnapshot.forEach(doc => {
-        const withdrawal = doc.data();
+        const withdrawal = doc.data() as any;
         const amount = Number(withdrawal.amount || 0);
         
         if (withdrawal.status === 'completed') {
@@ -914,11 +916,14 @@ export class FundsService {
       });
       
       // Também buscar de advanceTransactions para garantir que pegamos todos os adiantamentos
+      // IMPORTANTE: aqui só consideramos transações com status 'completed'
+      // para contabilizar valores efetivamente creditados pelo Asaas.
       try {
         const advanceTxsQuery = query(
           collection(db, 'advanceTransactions'),
           where('freelancerId', '==', freelancerId),
-          where('type', '==', 'advance_payment')
+          where('type', '==', 'advance_payment'),
+          where('status', '==', 'completed')
         );
         const advanceTxsSnapshot = await getDocs(advanceTxsQuery);
         
