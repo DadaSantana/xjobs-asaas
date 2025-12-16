@@ -5,7 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { CheckCircle, AlertCircle, Banknote, CreditCard } from 'lucide-react';
+import { CheckCircle, AlertCircle, Banknote, CreditCard, Info } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,6 +17,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import BankAccountSetupModal from '@/components/BankAccountSetupModal';
 import { useEffect, useMemo, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -62,6 +70,7 @@ const MinhasFinancas = () => {
   const [withdrawDialogData, setWithdrawDialogData] = useState<{ amount: number; netAmount: number } | null>(null);
   const [showAdvanceDialog, setShowAdvanceDialog] = useState(false);
   const [selectedProjectForAdvance, setSelectedProjectForAdvance] = useState<string | null>(null);
+  const [showFinancialInfoDialog, setShowFinancialInfoDialog] = useState(false);
 
   const handleSubmit = async (data: BankAccount) => {
     if (!userProfile?.uid) {
@@ -330,13 +339,26 @@ const MinhasFinancas = () => {
       {/* Resumo Financeiro */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CreditCard className="h-5 w-5" />
-            Resumo Financeiro
-          </CardTitle>
-          <CardDescription>
-            Visão geral dos seus ganhos e transações
-          </CardDescription>
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <CardTitle className="flex items-center gap-2">
+                <CreditCard className="h-5 w-5" />
+                Resumo Financeiro
+              </CardTitle>
+              <CardDescription>
+                Visão geral dos seus ganhos e transações
+              </CardDescription>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowFinancialInfoDialog(true)}
+              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+            >
+              <Info className="h-4 w-4 mr-1" />
+              Saiba mais
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {balanceLoading ? (
@@ -410,17 +432,23 @@ const MinhasFinancas = () => {
                 <div className="text-xs text-gray-500 mb-1">💳 Cartão (35 dias)</div>
                 <div className="text-lg md:text-2xl font-bold text-orange-700">{formatCurrency(summary.blockedBalance)}</div>
                 {summary.blockedBalance > 0 && pendingReleases.length > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="mt-2 text-xs border-blue-600 text-blue-600 hover:bg-blue-50"
-                    onClick={() => {
-                      setSelectedProjectForAdvance(pendingReleases[0].projectId);
-                      setShowAdvanceDialog(true);
-                    }}
-                  >
-                    ⚡ Adiantar Agora
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2 text-xs border-blue-600 text-blue-600 hover:bg-blue-50"
+                      onClick={() => {
+                        setSelectedProjectForAdvance(pendingReleases[0].projectId);
+                        setShowAdvanceDialog(true);
+                      }}
+                    >
+                      ⚡ Adiantar Agora
+                    </Button>
+                    <div className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                      <Info className="h-3 w-3 inline mr-1" />
+                      Sujeito a aprovação (4-5 dias)
+                    </div>
+                  </>
                 )}
               </div>
             </div>
@@ -444,6 +472,13 @@ const MinhasFinancas = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <Alert className="mb-4 border-amber-200 bg-amber-50">
+              <Info className="h-4 w-4 text-amber-600" />
+              <AlertTitle className="text-amber-800 font-semibold">Importante sobre Adiantamento</AlertTitle>
+              <AlertDescription className="text-amber-700 text-sm mt-1">
+                O adiantamento de valores no crédito está sujeito a aprovação mediante análise, e o prazo para este processamento é de <strong>4 a 5 dias úteis</strong>.
+              </AlertDescription>
+            </Alert>
             <div className="space-y-3">
               {pendingReleases.map((release, idx) => (
                 <div key={idx} className="flex items-center justify-between p-4 bg-orange-50 rounded-lg border border-orange-200">
@@ -791,6 +826,153 @@ const MinhasFinancas = () => {
           freelancerId={userProfile.uid}
         />
       )}
+
+      {/* Dialog de Informações Financeiras */}
+      <Dialog open={showFinancialInfoDialog} onOpenChange={setShowFinancialInfoDialog}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl">
+              <Info className="h-5 w-5 text-blue-600" />
+              Entenda seu Resumo Financeiro
+            </DialogTitle>
+            <DialogDescription>
+              Informações detalhadas sobre cada conceito do seu resumo financeiro
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 mt-4">
+            {/* Saldo Disponível */}
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 bg-green-200 rounded-full flex items-center justify-center">
+                  <span className="text-green-700 font-bold">✓</span>
+                </div>
+                <h3 className="font-semibold text-green-900">Saldo Disponível</h3>
+              </div>
+              <p className="text-sm text-green-800 mb-2">
+                Este é o valor que você pode sacar imediatamente. Representa o total de ganhos já liberados e confirmados, 
+                menos os valores que já foram solicitados para saque ou adiantamento.
+              </p>
+              <div className="bg-white rounded p-3 mt-2">
+                <p className="text-xs text-gray-600">
+                  <strong>Como usar:</strong> Clique em "Solicitar Saque" para transferir este valor para sua conta bancária. 
+                  A transferência é feita via PIX com taxa de <strong>R$ 2,00</strong> por transação.
+                </p>
+              </div>
+            </div>
+
+            {/* Total Liberado */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 bg-blue-200 rounded-full flex items-center justify-center">
+                  <span className="text-blue-700 font-bold">✓</span>
+                </div>
+                <h3 className="font-semibold text-blue-900">Total Liberado</h3>
+              </div>
+              <p className="text-sm text-blue-800 mb-2">
+                Este é o valor total que já foi liberado pelo cliente e confirmado pelo sistema de pagamento (Asaas). 
+                Inclui todos os pagamentos que foram processados com sucesso.
+              </p>
+              <div className="bg-white rounded p-3 mt-2">
+                <p className="text-xs text-gray-600">
+                  <strong>Importante:</strong> Este valor representa o total histórico de liberações confirmadas. 
+                  Parte dele pode estar no "Saldo Disponível" (para saque) ou no "Processando" (aguardando confirmação).
+                </p>
+              </div>
+            </div>
+
+            {/* Processando */}
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 bg-yellow-200 rounded-full flex items-center justify-center">
+                  <span className="text-yellow-700 font-bold">⏳</span>
+                </div>
+                <h3 className="font-semibold text-yellow-900">Processando</h3>
+              </div>
+              <p className="text-sm text-yellow-800 mb-2">
+                Valores que estão em processamento, ou seja, você já solicitou o saque ou adiantamento, mas ainda não foram 
+                confirmados e transferidos para sua conta bancária.
+              </p>
+              <div className="bg-white rounded p-3 mt-2">
+                <p className="text-xs text-gray-600">
+                  <strong>O que significa:</strong> Estes valores já foram descontados do seu "Saldo Disponível" e estão 
+                  sendo processados pelo sistema. Em breve serão transferidos para sua conta bancária.
+                </p>
+              </div>
+            </div>
+
+            {/* Pendente */}
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 bg-orange-200 rounded-full flex items-center justify-center">
+                  <span className="text-orange-700 font-bold">💳</span>
+                </div>
+                <h3 className="font-semibold text-orange-900">Pendente</h3>
+              </div>
+              <p className="text-sm text-orange-800 mb-2">
+                Valores que foram liberados pelo cliente, mas estão bloqueados porque o pagamento foi feito com 
+                <strong> cartão de crédito</strong>. Por segurança, estes valores ficam bloqueados por <strong>35 dias</strong> 
+                antes de ficarem disponíveis para saque.
+              </p>
+              <div className="bg-white rounded p-3 mt-2 space-y-2">
+                <p className="text-xs text-gray-600">
+                  <strong>Adiantamento disponível:</strong> Você pode solicitar o adiantamento destes valores antes dos 35 dias, 
+                  pagando uma taxa de <strong>2%</strong> sobre o valor solicitado.
+                </p>
+                <Alert className="border-amber-200 bg-amber-50 mt-2">
+                  <Info className="h-3 w-3 text-amber-600" />
+                  <AlertDescription className="text-xs text-amber-700">
+                    <strong>Importante:</strong> O adiantamento está sujeito a aprovação mediante análise, 
+                    e o prazo para processamento é de <strong>4 a 5 dias úteis</strong>.
+                  </AlertDescription>
+                </Alert>
+              </div>
+            </div>
+
+            {/* Saque */}
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
+                  <span className="text-gray-700 font-bold">💰</span>
+                </div>
+                <h3 className="font-semibold text-gray-900">Saque</h3>
+              </div>
+              <p className="text-sm text-gray-800 mb-2">
+                O saque é a transferência do seu "Saldo Disponível" para sua conta bancária cadastrada.
+              </p>
+              <div className="bg-white rounded p-3 mt-2 space-y-2">
+                <p className="text-xs text-gray-600">
+                  <strong>Como funciona:</strong>
+                </p>
+                <ul className="text-xs text-gray-600 list-disc list-inside space-y-1 ml-2">
+                  <li>Você precisa ter dados bancários configurados</li>
+                  <li>A transferência é feita via <strong>PIX</strong></li>
+                  <li>Taxa de <strong>R$ 2,00</strong> é descontada do valor solicitado</li>
+                  <li>O valor líquido é transferido para sua conta</li>
+                  <li>O processamento geralmente leva até <strong>1 hora</strong></li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Resumo Geral */}
+            <Alert className="bg-blue-50 border-blue-200">
+              <Info className="h-4 w-4 text-blue-600" />
+              <AlertTitle className="text-blue-900 font-semibold">Resumo Geral</AlertTitle>
+              <AlertDescription className="text-sm text-blue-800 mt-1">
+                <p className="mb-2">
+                  Seu resumo financeiro mostra todos os seus ganhos de forma organizada:
+                </p>
+                <ul className="list-disc list-inside space-y-1 ml-2">
+                  <li><strong>Saldo Disponível:</strong> O que você pode sacar agora</li>
+                  <li><strong>Total Liberado:</strong> Tudo que já foi confirmado</li>
+                  <li><strong>Processando:</strong> Saques/adiantamentos em andamento</li>
+                  <li><strong>Pendente:</strong> Valores bloqueados (cartão - 35 dias)</li>
+                </ul>
+              </AlertDescription>
+            </Alert>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

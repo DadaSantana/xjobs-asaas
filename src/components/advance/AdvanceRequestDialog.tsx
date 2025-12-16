@@ -292,10 +292,13 @@ export function AdvanceRequestDialog({
             </div>
 
             {/* Informações importantes */}
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription className="text-sm">
+            <Alert className="border-amber-200 bg-amber-50">
+              <AlertCircle className="h-4 w-4 text-amber-600" />
+              <AlertDescription className="text-sm text-amber-800">
                 <strong>Importante:</strong> O adiantamento será processado pelo Asaas. 
+                <span className="block mt-2 font-semibold">
+                  ⚠ O adiantamento de valores no crédito está sujeito a aprovação mediante análise, e o prazo para este processamento é de <strong>4 a 5 dias úteis</strong>.
+                </span>
                 {simulation && (
                   <span className="block mt-1">
                     Taxa confirmada: <strong>{simulation.feePercentage}%</strong>
