@@ -273,6 +273,29 @@ export class ChatService {
       callback(messages);
     });
   }
+
+  // Obter todas as mensagens de um chat de forma síncrona (para exportação)
+  static async getChatMessages(chatId: string): Promise<ChatMessage[]> {
+    try {
+      const messagesRef = collection(db, 'chats', chatId, 'messages');
+      const q = query(messagesRef, orderBy('timestamp', 'asc'));
+      
+      const querySnapshot = await getDocs(q);
+      const messages: ChatMessage[] = [];
+      
+      querySnapshot.forEach((doc) => {
+        messages.push({
+          id: doc.id,
+          ...doc.data()
+        } as ChatMessage);
+      });
+      
+      return messages;
+    } catch (error) {
+      console.error('Erro ao obter mensagens do chat:', error);
+      throw error;
+    }
+  }
   
   // Obter todos os chats (para moderadores/administradores)
   static async getAllChats(): Promise<Chat[]> {

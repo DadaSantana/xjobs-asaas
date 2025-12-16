@@ -721,7 +721,7 @@ const Chat = () => {
         </div>
 
         {/* Área de Conversa */}
-        <div className={`${!isMobileViewingChat && (selectedChat || temporaryChat) ? 'hidden md:flex' : 'flex'} flex-1 flex-col min-w-0 overflow-hidden`}>
+        <div className={`${!isMobileViewingChat && (selectedChat || temporaryChat) ? 'hidden md:flex' : 'flex'} flex-1 flex-col min-w-0 overflow-hidden h-full`}>
           {selectedChat || temporaryChat ? (
             <>
               {/* Header da Conversa */}
@@ -988,7 +988,7 @@ const Chat = () => {
             </>
           ) : (
             /* Estado Vazio - Escondido no mobile */
-            <div className="hidden md:flex flex-1 items-center justify-center bg-gray-50">
+            <div className="hidden md:flex flex-1 items-center justify-center bg-gray-50 min-h-full">
               <div className="text-center max-w-md mx-auto p-6">
                 <Users className="h-16 w-16 mx-auto mb-4 text-gray-300" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">

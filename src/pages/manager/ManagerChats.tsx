@@ -21,8 +21,12 @@ import {
   CheckCircle,
   XCircle,
   Eye,
-  Shield
+  Shield,
+  Download,
+  FileText,
+  File
 } from 'lucide-react';
+import { exportChatToTxt, exportChatToPdf } from '@/utils/chatExport';
 
 interface ChatWithModeration extends Chat {
   moderationRequest?: ModerationRequest;
@@ -39,6 +43,7 @@ const ManagerChats = () => {
   const [activeTab, setActiveTab] = useState('all');
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
   const [showChatModal, setShowChatModal] = useState(false);
+  const [exportingChat, setExportingChat] = useState<string | null>(null);
 
   useEffect(() => {
     loadChats();
@@ -196,6 +201,83 @@ const ManagerChats = () => {
     }
   };
 
+  const handleExportChat = async (chat: Chat, format: 'txt' | 'pdf') => {
+    try {
+      setExportingChat(chat.id);
+      
+      // Obter todas as mensagens do chat
+      const messages = await ChatService.getChatMessages(chat.id);
+      
+      if (format === 'txt') {
+        exportChatToTxt(chat, messages);
+      } else {
+        await exportChatToPdf(chat, messages);
+      }
+      
+      toast({
+        title: "Exportação Concluída",
+        description: `Conversa exportada em formato ${format.toUpperCase()} com sucesso`,
+      });
+    } catch (error) {
+      console.error('Erro ao exportar conversa:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao exportar conversa",
+        variant: "destructive",
+      });
+    } finally {
+      setExportingChat(null);
+    }
+  };
+
+  const handleExportAllChats = async (format: 'txt' | 'pdf') => {
+    try {
+      if (filteredChats.length === 0) {
+        toast({
+          title: "Aviso",
+          description: "Não há conversas para exportar",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setExportingChat('all');
+      
+      // Exportar cada conversa
+      for (const chat of filteredChats) {
+        try {
+          const messages = await ChatService.getChatMessages(chat.id);
+          
+          if (format === 'txt') {
+            exportChatToTxt(chat, messages);
+            // Pequeno delay para evitar sobrecarga
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } else {
+            await exportChatToPdf(chat, messages);
+            // Pequeno delay para evitar sobrecarga
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        } catch (error) {
+          console.error(`Erro ao exportar conversa ${chat.id}:`, error);
+        }
+      }
+      
+      toast({
+        title: "Exportação Concluída",
+        description: `${filteredChats.length} conversa(s) exportada(s) em formato ${format.toUpperCase()}`,
+      });
+    } catch (error) {
+      console.error('Erro ao exportar conversas:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao exportar conversas",
+        variant: "destructive",
+      });
+    } finally {
+      setExportingChat(null);
+    }
+  };
+
   const stats = {
     total: chats.length,
     active: chats.filter(c => c.status === 'active').length,
@@ -317,17 +399,55 @@ const ManagerChats = () => {
         </Card>
       </div>
 
-      {/* Filtros */}
+      {/* Filtros e Exportação */}
       <Card className="mb-4 md:mb-6">
         <CardContent className="p-4 md:p-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="Buscar por nome, email ou ID..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 text-sm md:text-base"
-            />
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Buscar por nome, email ou ID..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 text-sm md:text-base"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleExportAllChats('txt')}
+                disabled={filteredChats.length === 0 || exportingChat === 'all'}
+                className="text-xs md:text-sm"
+              >
+                {exportingChat === 'all' ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+                ) : (
+                  <>
+                    <FileText className="h-3 w-3 md:h-4 md:w-4 mr-1" />
+                    <span className="hidden sm:inline">Exportar TXT</span>
+                    <span className="sm:hidden">TXT</span>
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleExportAllChats('pdf')}
+                disabled={filteredChats.length === 0 || exportingChat === 'all'}
+                className="text-xs md:text-sm"
+              >
+                {exportingChat === 'all' ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+                ) : (
+                  <>
+                    <File className="h-3 w-3 md:h-4 md:w-4 mr-1" />
+                    <span className="hidden sm:inline">Exportar PDF</span>
+                    <span className="sm:hidden">PDF</span>
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -459,6 +579,38 @@ const ManagerChats = () => {
                             <span className="hidden sm:inline">Ver Conversa</span>
                             <span className="sm:hidden">Ver</span>
                           </Button>
+                          
+                          <div className="flex gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleExportChat(chat, 'txt')}
+                              disabled={exportingChat === chat.id}
+                              className="text-xs md:text-sm"
+                              title="Exportar como TXT"
+                            >
+                              {exportingChat === chat.id ? (
+                                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-600"></div>
+                              ) : (
+                                <FileText className="h-3 w-3 md:h-4 md:w-4" />
+                              )}
+                            </Button>
+                            
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleExportChat(chat, 'pdf')}
+                              disabled={exportingChat === chat.id}
+                              className="text-xs md:text-sm"
+                              title="Exportar como PDF"
+                            >
+                              {exportingChat === chat.id ? (
+                                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-600"></div>
+                              ) : (
+                                <File className="h-3 w-3 md:h-4 md:w-4" />
+                              )}
+                            </Button>
+                          </div>
                           
                           {chat.status === 'disputed' && (
                             <Button 
