@@ -252,19 +252,22 @@ const ProjectPaymentModal: React.FC<ProjectPaymentModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-green-600" />
-            Pagamento da Garantia
-          </DialogTitle>
-          <DialogDescription>
-            {step === 'form' && 'Preencha seus dados para prosseguir com o pagamento'}
-            {step === 'confirm' && 'Confirme seus dados e prossiga para o pagamento'}
-            {step === 'processing' && 'Processando seu pagamento...'}
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0">
+        <div className="flex-shrink-0 px-6 pt-6 pb-4 border-b">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-green-600" />
+              Pagamento da Garantia
+            </DialogTitle>
+            <DialogDescription>
+              {step === 'form' && 'Preencha seus dados para prosseguir com o pagamento'}
+              {step === 'confirm' && 'Confirme seus dados e prossiga para o pagamento'}
+              {step === 'processing' && 'Processando seu pagamento...'}
+            </DialogDescription>
+          </DialogHeader>
+        </div>
 
+        <div className="flex-1 overflow-y-auto px-6 py-4">
         <div className="space-y-6">
           {/* Resumo do Projeto */}
           <Card>
@@ -471,25 +474,6 @@ const ProjectPaymentModal: React.FC<ProjectPaymentModalProps> = ({
                 </AlertDescription>
               </Alert>
 
-              <div className="flex gap-3">
-                <Button
-                  onClick={onClose}
-                  variant="outline"
-                  className="flex-1"
-                  disabled={loading}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  onClick={handleConfirmPayment}
-                  className="flex-1 bg-green-600 hover:bg-green-700"
-                  size="lg"
-                  disabled={loading}
-                >
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  Prosseguir para Pagamento
-                </Button>
-              </div>
             </>
           )}
 
@@ -502,6 +486,30 @@ const ProjectPaymentModal: React.FC<ProjectPaymentModalProps> = ({
             </div>
           )}
         </div>
+        </div>
+
+        {/* Rodapé fixo com os botões de ação */}
+        {step === 'confirm' && (
+          <div className="flex-shrink-0 flex gap-3 px-6 py-4 border-t bg-background">
+            <Button
+              onClick={onClose}
+              variant="outline"
+              className="flex-1"
+              disabled={loading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleConfirmPayment}
+              className="flex-1 bg-green-600 hover:bg-green-700"
+              size="lg"
+              disabled={loading}
+            >
+              <ExternalLink className="h-4 w-4 mr-2" />
+              Prosseguir para Pagamento
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

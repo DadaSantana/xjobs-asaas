@@ -18,10 +18,12 @@ import {
 import { ProjectLike } from '@/types/project';
 import { ProjectLikesService } from '@/services/projectLikesService';
 import { useToast } from '@/hooks/use-toast';
+import { ToastAction } from '@/components/ui/toast';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { UserProfileService } from '@/services/userProfileService';
 import { getAuth } from 'firebase/auth';
+import { useNavigate } from 'react-router-dom';
 
 interface ProjectLikesDisplayProps {
   projectId: string;
@@ -48,6 +50,7 @@ export const ProjectLikesDisplay: React.FC<ProjectLikesDisplayProps> = ({
   const [freelancerPlans, setFreelancerPlans] = useState<Record<string, string>>({});
   const [processingLikeId, setProcessingLikeId] = useState<string | null>(null);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   useEffect(() => {
     loadProjectLikes();
@@ -130,6 +133,14 @@ export const ProjectLikesDisplay: React.FC<ProjectLikesDisplayProps> = ({
           title: 'Dados incompletos',
           description: 'Configure seus dados de pagamento antes de aceitar propostas.',
           variant: 'destructive',
+          action: (
+            <ToastAction
+              altText="Completar dados"
+              onClick={() => navigate('/cliente/meus-projetos')}
+            >
+              Completar dados
+            </ToastAction>
+          ),
         });
         setSelectedLike(null);
         return;

@@ -26,8 +26,8 @@ import { cn } from "@/lib/utils";
 const projectSchema = z.object({
   title: z.string().min(10, "Título deve ter pelo menos 10 caracteres"),
   category: z.enum(["desenvolvimento", "design", "marketing", "redacao", "consultoria", "outros"]),
-  budgetMin: z.number(),
-  budgetMax: z.number(),
+  budgetMin: z.number().min(30, "Valor mínimo é R$ 30"),
+  budgetMax: z.number().min(30, "Valor mínimo é R$ 30").max(10000, "Valor máximo é R$ 10.000"),
   budgetType: z.enum(["fixo", "por_hora"]),
   deadline: z.date({
     required_error: "Prazo é obrigatório",
@@ -236,8 +236,8 @@ const PublicarProjeto = () => {
     mode: 'onChange',
     defaultValues: {
       title: '',
-      budgetMin: 0,
-      budgetMax: 0,
+      budgetMin: 30,
+      budgetMax: 30,
     }
   });
 
@@ -605,8 +605,10 @@ const PublicarProjeto = () => {
                       <Input
                         id="budgetMin"
                         type="number"
+                        min={30}
+                        max={10000}
                         {...register("budgetMin", { valueAsNumber: true })}
-                        placeholder="500"
+                        placeholder="30"
                         className="mt-1"
                       />
                       {errors.budgetMin && (
@@ -618,8 +620,10 @@ const PublicarProjeto = () => {
                       <Input
                         id="budgetMax"
                         type="number"
+                        min={30}
+                        max={10000}
                         {...register("budgetMax", { valueAsNumber: true })}
-                        placeholder="2000"
+                        placeholder="10000"
                         className="mt-1"
                       />
                       {errors.budgetMax && (

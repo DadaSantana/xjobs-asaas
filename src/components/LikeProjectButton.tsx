@@ -141,6 +141,15 @@ export const LikeProjectButton: React.FC<LikeProjectButtonProps> = ({
       return;
     }
 
+    if (proposedValue < 30) {
+      toast({
+        title: "Erro",
+        description: "Valor proposto mínimo é R$ 30,00",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (proposedValue > 10000) {
       toast({
         title: "Erro",
@@ -297,7 +306,7 @@ export const LikeProjectButton: React.FC<LikeProjectButtonProps> = ({
                 />
               </div>
               <p className="text-xs text-gray-500">
-                Limite máximo: R$ 10.000,00 (será acrescida comissão de 10%)
+                Valor entre R$ 30,00 e R$ 10.000,00 (será acrescida comissão de 10%)
               </p>
               {proposalData.proposedValue && (
                 <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
